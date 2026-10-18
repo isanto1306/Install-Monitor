@@ -1,0 +1,30 @@
+name: Source checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Validate Python and frontend
+        run: |
+          python -m py_compile main.py setup_credentials.py
+          node --check static/app.js
+          sh -n install.sh
+      - name: Run offline installer tests
+        run: python -m unittest discover -s tests -v
+      - name: Scan source before publication
+        run: python scripts/prepublish_check.py
