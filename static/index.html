@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="referrer" content="no-referrer">
@@ -8,7 +8,7 @@
 <title>Install Monitor</title>
 <link rel="icon" type="image/png" href="/static/install-monitor-icon.png?v=0.1.51-sharp-final">
 <link rel="stylesheet" href="/static/style.css?v=0.1.51">
-<script defer src="/static/app.js?v=0.2.56"></script>
+<script defer src="/static/app.js?v=0.2.56-beta.2"></script>
 <style>
 .im-field-row{display:flex;gap:8px;align-items:stretch}.im-field-row>input{flex:1;min-width:0}.im-field-row>button{white-space:nowrap}
 .im-settings-row{padding:11px 0;border-bottom:1px solid #293949}.im-settings-row:last-child{border-bottom:0}
@@ -820,7 +820,7 @@ body:has(#imAboutPanel:not([hidden])) .main-header::before{width:min(375px,100vw
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutCpu">CPU-Auslastung</span><strong id="imAboutCpu" class="im-about-value">–</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutMemory">Arbeitsspeicher</span><strong id="imAboutMemory" class="im-about-value">–</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutSince">Online seit</span><strong id="imAboutSince" class="im-about-value">–</strong></div>
-    <div class="im-about-row"><span class="im-about-label" data-ui="aboutVersion">Version</span><strong id="imAboutVersion" class="im-about-value">v0.2.54</strong></div>
+    <div class="im-about-row"><span class="im-about-label" data-ui="aboutVersion">Version</span><strong id="imAboutVersion" class="im-about-value">v0.2.56-beta.2</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutSupport">Unterstützt von</span><strong class="im-about-value">iSanto1306</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutDonate">Projekt unterstützen</span><a class="im-about-paypal" href="https://paypal.me/DarioSantinho" target="_blank" rel="noopener noreferrer" aria-label="Projekt über PayPal unterstützen" title="PayPal"><span class="im-about-pay">Pay</span><span class="im-about-pal">Pal</span></a></div>
   </div>
@@ -832,8 +832,8 @@ body:has(#imAboutPanel:not([hidden])) .main-header::before{width:min(375px,100vw
 </aside>
 <dialog id="settingsDialog"><div class="dialog-heading"><h2 data-t="settings">Einstellungen</h2></div>
  <label for="language" data-t="language">Sprache</label><div class="im-language-picker" id="imLanguagePicker">
-  <button type="button" id="imLanguageToggle" class="im-language-toggle" aria-haspopup="listbox" aria-controls="imLanguageMenu" aria-expanded="false"><span id="imLanguageCurrent">Deutsch</span><span class="im-language-plus" aria-hidden="true">+</span></button>
-  <div id="imLanguageMenu" class="im-language-menu" role="listbox" aria-label="Sprache" hidden>
+  <button type="button" id="imLanguageToggle" class="im-language-toggle" aria-haspopup="listbox" aria-controls="imLanguageMenu" aria-expanded="false"><span id="imLanguageCurrent">English</span><span class="im-language-plus" aria-hidden="true">+</span></button>
+  <div id="imLanguageMenu" class="im-language-menu" role="listbox" aria-label="Language" hidden>
     <button type="button" role="option" data-lang="de">Deutsch</button><button type="button" role="option" data-lang="en">English</button><button type="button" role="option" data-lang="fr">Français</button><button type="button" role="option" data-lang="pt">Português</button><button type="button" role="option" data-lang="es">Español</button>
   </div>
   <select id="language" class="im-language-native" tabindex="-1" aria-hidden="true"><option value="de">Deutsch</option><option value="en">English</option><option value="fr">Français</option><option value="pt">Português</option><option value="es">Español</option></select>
@@ -877,7 +877,7 @@ body:has(#imAboutPanel:not([hidden])) .main-header::before{width:min(375px,100vw
   <input id="proxyHostCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
   <div class="actions"><button type="button" class="secondary" id="proxyHostAdd" data-ui="proxyAdd">Host hinzufügen</button></div>
  </section>
- <p class="subtle">Install Monitor v0.2.56</p>
+ <p class="subtle">Install Monitor v0.2.56-beta.2</p>
  <button class="secondary" id="logoutBtn" data-t="logout">Abmelden</button>
 </dialog>
 <dialog id="folderDialog" class="im-folder-dialog" aria-labelledby="folderDialogHeading">
