@@ -25,6 +25,7 @@ services:
       - no-new-privileges:true
     labels:
       title: Install Monitor
+      icon: https://raw.githubusercontent.com/isanto1306/Install-Monitor/main/static/install-monitor-icon.png
 
   registry:
     image: registry:2.8.3
