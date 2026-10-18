@@ -1,0 +1,65 @@
+# Install Monitor v0.2.56 — self-hosted ZimaOS/Docker Compose beta.
+# Local private registry binds only to 127.0.0.1; no public registry push.
+# The Docker socket gives the application extensive host control. Keep the
+# admin UI private (LAN/VPN) and use HTTPS when accessing it remotely.
+name: install-monitor
+services:
+  install-monitor:
+    container_name: install-monitor
+    image: install-monitor:0.2.56-local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - /DATA/AppData/Install-Monitor/.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /DATA/AppData/Install-Monitor/data:/app/data
+      - /DATA:/im-browse/DATA:ro
+      - /media:/im-browse/media:ro
+    depends_on:
+      - registry
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      title: Install Monitor
+
+  registry:
+    image: registry:2.8.3
+    container_name: install-monitor-local-registry
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:50813:5000'
+    volumes:
+      - /DATA/AppData/Install-Monitor/registry:/var/lib/registry
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+
+x-casaos:
+  id: local.installmonitor.install-monitor
+  main: install-monitor
+  index: /
+  port_map: '9012'
+  scheme: http
+  title:
+    custom: Install Monitor
+    en_US: Install Monitor
+    de_DE: Install Monitor
+  tagline:
+    en_US: Guided Docker and ZimaOS installation
+    de_DE: Geführte Docker- und ZimaOS-Installation
+  description:
+    en_US: Analyze and install Docker Compose apps, with a private localhost image registry.
+    de_DE: Docker-Compose-Apps prüfen und installieren, mit einer privaten lokalen Image-Registry.
+  category: Developer
+  author: isanto1306
+  developer: isanto1306
+  architectures:
+    - amd64
+  version: '0.2.56'
