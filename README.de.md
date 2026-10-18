@@ -1,4 +1,6 @@
-# Install Monitor v0.2.56 · öffentliche Beta (GPL v3)
+# Install Monitor v0.2.56 Beta 2 · öffentliche Beta (GPL v3)
+
+**Neuinstallationen starten auf Englisch.** Eine bereits gewählte Sprache bleibt beim Update erhalten.
 
 Install Monitor unterstützt das Analysieren und Installieren von Docker-Compose-Projekten auf ZimaOS und kompatiblen Linux-/Docker-Hosts. Dieser Quellcode ist **eine GitHub-Veröffentlichungsvorbereitung**. Keine automatische Registrierung einer Dashboard-Kachel, keine Garantie der Kompatibilität jeder Drittanbieter-App.
 
