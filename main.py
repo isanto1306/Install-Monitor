@@ -50,6 +50,18 @@ if not re.fullmatch(r"[A-Za-z0-9_.-]{3,64}", ADMIN_USER):
     raise RuntimeError("IM_ADMIN_USERNAME must contain 3–64 letters, numbers, '.', '_' or '-'")
 if not (ADMIN_PASS or ADMIN_PASSWORD_HASH) or not SESSION_SECRET:
     raise RuntimeError("Set IM_ADMIN_USERNAME, IM_ADMIN_PASSWORD_HASH (or legacy IM_ADMIN_PASSWORD), and IM_SESSION_SECRET")
+# Public ZimaOS store templates intentionally contain nonfunctional placeholders.
+# Refuse to start with them; older private installations otherwise retain their
+# existing legacy password behavior for backward compatibility.
+_UNSAFE_DEFAULTS = ("CHANGE_ME", "REPLACE_WITH", "YOUR_PASSWORD", "EXAMPLE_SECRET")
+if any(any(marker in value.upper() for marker in _UNSAFE_DEFAULTS)
+       for value in (ADMIN_USER, ADMIN_PASS, ADMIN_PASSWORD_HASH, SESSION_SECRET)):
+    raise RuntimeError("Replace all example username, password, and session-secret placeholders before installation")
+if os.getenv("IM_ENFORCE_CREDENTIAL_POLICY", "false").lower() == "true":
+    if not ADMIN_PASSWORD_HASH and len(ADMIN_PASS) < 12:
+        raise RuntimeError("IM_ADMIN_PASSWORD must contain at least 12 characters")
+    if len(SESSION_SECRET) < 32:
+        raise RuntimeError("IM_SESSION_SECRET must contain at least 32 characters")
 # Validate credential configuration at start, not after an attempted login.
 _PASSWORD_HASH_PATTERN = re.compile(r"^pbkdf2_sha256:([0-9]{6,7}):([a-f0-9]{32}):([a-f0-9]{64})$")
 if ADMIN_PASSWORD_HASH:
