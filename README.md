@@ -1,11 +1,13 @@
 # Install Monitor
 
-**v0.2.56 – Public beta candidate · GPL v3**
+**v0.2.56 Beta 2 – Public beta · GPL v3**
 
 Install Monitor is a self-hosted, dark-mode application for inspecting and configuring Docker images, repositories, and Compose projects for **ZimaOS** and compatible Linux hosts. It guides users through source inspection, storage paths, ports, permissions, resource settings, and a reviewed installation process.
 
 **[Deutsche Anleitung / German documentation](README.de.md)**
 
+
+**Fresh installations start in English.** Previously selected interface languages remain unchanged after an update.
 ## Features
 
 - Four app catalogs: iSanto1306 Apps, LinuxServer.io, selfh.st, and GitHub
