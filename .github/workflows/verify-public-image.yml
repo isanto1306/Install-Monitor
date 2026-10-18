@@ -1,0 +1,23 @@
+name: Verify anonymous beta image pull
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-public-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  anonymous-pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull as an anonymous user
+        run: |
+          set -eu
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          docker pull ghcr.io/isanto1306/install-monitor:beta
+      - name: Inspect published image
+        run: docker image inspect ghcr.io/isanto1306/install-monitor:beta --format '{{.Id}}'
