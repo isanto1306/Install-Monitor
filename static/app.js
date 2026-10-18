@@ -493,7 +493,7 @@ async function loadHostResources(refresh=false){
 }
 
 let wizardGeneration=0;
-let availableProfiles=[];let publisherImages=[];let setupLaterProfiles=new Set();let planReady=false;let lang=localStorage.getItem('installMonitorLanguage')||'de'; if(!languages[lang])lang='de';let csrf='',kind='image',step=1,source='',appName='',busy=false,installed=false;
+let availableProfiles=[];let publisherImages=[];let setupLaterProfiles=new Set();let planReady=false;let lang=localStorage.getItem('installMonitorLanguage')||'en'; if(!languages[lang])lang='en';let csrf='',kind='image',step=1,source='',appName='',busy=false,installed=false;
 const newTexts={
  de:{installedDone:'✓ Erfolgreich installiert',readinessReady:'Installationsvoraussetzungen erfüllt',readinessBlocked:'Vor der Installation noch erforderlich',fixSetup:'Zur Konfiguration zurück',technicalSummary:'Technische Hinweise',publishedImage:'Offiziell dokumentiertes Image',publisherAccept:'Dieses Image bewusst übernehmen',publisherApplied:'Veröffentlichtes Image übernommen. Quell-Compose bitte überprüfen.'},
  en:{installedDone:'✓ Successfully installed',readinessReady:'Installation prerequisites met',readinessBlocked:'Required before installation',fixSetup:'Back to configuration',technicalSummary:'Technical notes',publishedImage:'Image documented by publisher',publisherAccept:'Explicitly use this image',publisherApplied:'Published image selected. Please review the source Compose.'},
