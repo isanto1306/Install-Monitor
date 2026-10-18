@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56"
+VERSION = "0.2.56-beta.2"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -6239,7 +6239,7 @@ def zima_login(host: str, username: str, password: str) -> str:
 def index():
     # Keep package release label aligned when distributing only main.py.
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    html = re.sub(r"Install Monitor v[0-9]+(?:\.[0-9]+){2}(?:-preview)?", "Install Monitor v" + VERSION, html)
+    html = re.sub(r"Install Monitor v[0-9]+(?:\.[0-9]+){2}(?:-beta\.\d+|-preview)?", "Install Monitor v" + VERSION, html)
     # Query-string versions must follow the deployed backend. A stale app.js
     # otherwise hides newly added installation fields despite a newer UI label.
     html = re.sub(r"(/static/(?:app\.js|style\.css)\?v=)[A-Za-z0-9._-]+",
