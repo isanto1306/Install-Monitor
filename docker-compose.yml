@@ -47,6 +47,7 @@ x-casaos:
   index: /
   port_map: '9012'
   scheme: http
+  icon: https://raw.githubusercontent.com/isanto1306/Install-Monitor/main/static/install-monitor-icon.png
   title:
     custom: Install Monitor
     en_US: Install Monitor
