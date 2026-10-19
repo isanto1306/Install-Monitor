@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.10"
+VERSION = "0.2.56-beta.11"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -5914,6 +5914,74 @@ def _attach_github_build_context(doc: dict, project_url: str, resolved_url: str)
 
 
 
+
+def _codeberg_branch_revision(project_url: str, branch: str) -> str:
+    """Resolve a public Codeberg branch via Forgejo API or verified Git refs.
+
+    Never silently substitute a moving branch for the commit: the later
+    checkout must still match this exact 40-character object id.
+    """
+    match = _CODEBERG_REPO.fullmatch(project_url)
+    if not match or not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', branch) or branch in ('.', '..'):
+        raise HTTPException(400, 'Ungültige Codeberg-Quelle oder Branch.')
+    owner, project = match.groups()
+    base = ('https://codeberg.org/api/v1/repos/' +
+            urllib.parse.quote(owner, safe='') + '/' +
+            urllib.parse.quote(project, safe=''))
+    branch_name = urllib.parse.quote(branch, safe='')
+    errors: list[str] = []
+    # Forgejo exposes a commit object via either route. Some installations
+    # restrict /commits/{ref} but permit /branches/{branch}.
+    for kind in ('commits', 'branches'):
+        try:
+            payload = json.loads(_download_remote(
+                f'{base}/{kind}/{branch_name}', max_bytes=250000))
+            if kind == 'commits':
+                sha = payload.get('sha') if isinstance(payload, dict) else None
+            else:
+                commit = payload.get('commit', {}) if isinstance(payload, dict) else {}
+                sha = (commit.get('id') or commit.get('sha')) if isinstance(commit, dict) else None
+            if isinstance(sha, str) and _BUILD_SHA.fullmatch(sha):
+                return sha
+            errors.append(kind + ': keine gültige Revision')
+        except (HTTPException, ValueError, TypeError) as exc:
+            # Don't expose a raw upstream error or tokens in a UI message.
+            status = exc.status_code if isinstance(exc, HTTPException) else 502
+            errors.append(f'{kind}: HTTP/JSON-Fehler ({status})')
+
+    remote = f'https://codeberg.org/{owner}/{project}.git'
+    ref = f'refs/heads/{branch}'
+    env = os.environ.copy()
+    env.update({
+        'GIT_TERMINAL_PROMPT': '0',
+        'GIT_CONFIG_NOSYSTEM': '1',
+        'GIT_CONFIG_GLOBAL': os.devnull,
+        'GIT_ALLOW_PROTOCOL': 'https',
+        'GIT_ASKPASS': '',
+        'GIT_SSH_COMMAND': 'false',
+    })
+    try:
+        response = subprocess.run(
+            ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null',
+             '-c', 'protocol.file.allow=never', 'ls-remote', '--exit-code', remote, ref],
+            capture_output=True, text=True, env=env, timeout=25, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise HTTPException(503,
+            'Codeberg-Commit konnte weder über die API noch über Git HTTPS verifiziert werden. '
+            'Git/DNS/HTTPS-Verbindung im Install-Monitor-Container prüfen. '
+            + ', '.join(errors)) from exc
+    if response.returncode == 0:
+        for line in response.stdout.splitlines():
+            fields = line.split('\t')
+            if len(fields) == 2 and fields[1] == ref and _BUILD_SHA.fullmatch(fields[0]):
+                return fields[0]
+    raise HTTPException(503,
+        'Codeberg-Commit weder über Forgejo API noch git ls-remote verifizierbar. '
+        'Kein unsicherer Build gestartet. Git/HTTPS-Verbindung am NAS prüfen. '
+        + ', '.join(errors))
+
+
+
 def _attach_codeberg_build_context(doc: dict, project_url: str, resolved_url: str,
                                    original_compose: str) -> tuple[dict, list[str]]:
     """Pin a Codeberg build to an immutable Forgejo commit before installation."""
@@ -5927,17 +5995,7 @@ def _attach_codeberg_build_context(doc: dict, project_url: str, resolved_url: st
     branch = parts[4]
     if not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', branch) or branch in ('.', '..'):
         raise HTTPException(400, 'Codeberg-Build-Branch ist ungültig oder wird nicht unterstützt.')
-    commit_url = ('https://codeberg.org/api/v1/repos/' +
-                  urllib.parse.quote(owner, safe='') + '/' +
-                  urllib.parse.quote(repo, safe='') + '/commits/' +
-                  urllib.parse.quote(branch, safe=''))
-    try:
-        data = json.loads(_download_remote(commit_url, max_bytes=250000))
-    except (HTTPException, ValueError, TypeError) as exc:
-        raise HTTPException(503, 'Codeberg-Commit konnte nicht geprüft werden. Kein Build aus einem ungeprüften Branch.') from exc
-    sha = data.get('sha') if isinstance(data, dict) else None
-    if not isinstance(sha, str) or not _BUILD_SHA.fullmatch(sha):
-        raise HTTPException(503, 'Codeberg meldet keinen gültigen Commit. Build nicht vorbereitet.')
+    sha = _codeberg_branch_revision(project_url, branch)
     path = '/'.join(parts[5:])
     if not _safe_github_index_path(path):
         raise HTTPException(400, 'Ungültiger Codeberg-Compose-Dateipfad.')
