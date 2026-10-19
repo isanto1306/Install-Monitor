@@ -1,25 +1,26 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.56 Beta 11 (19.10.2026)
+## Version 0.2.56 Beta 12 (19.10.2026)
 
-### Behoben: Codeberg-Commit-Prüfung
-- Nach der Quellanalyse von Projekten mit lokalem Docker-Build, beispielsweise `https://codeberg.org/irelephant/kittygram`, konnte die einzelne Forgejo-API-Abfrage `/commits/{branch}` fehlschlagen. Install Monitor brach dann mit der Meldung „Codeberg-Commit konnte nicht geprüft werden“ ab.
-- Für öffentliche Codeberg-Repositories werden zur Ermittlung des unveränderlichen Commits jetzt bis zu drei voneinander unabhängige Wege genutzt:
-  1. Forgejo-API `/commits/{branch}`.
-  2. Forgejo-API `/branches/{branch}` einschließlich der Commit-ID.
-  3. `git ls-remote --exit-code` über HTTPS für exakt `refs/heads/{branch}`, wenn die API nicht verfügbar ist.
-- Ein Ergebnis wird nur bei einer gültigen 40-stelligen Git-Commit-ID und passend zugeordnetem Branch akzeptiert.
-- Der geladene Compose-Inhalt wird weiterhin mit der Datei aus dem ermittelten Commit abgeglichen; der spätere lokale Checkout muss exakt auf diesem Commit stehen. Es wird **niemals** ein ungeprüfter Branch gebaut.
-- Wenn alle Prüfwege scheitern, weist die Fehlermeldung auf die Codeberg-API- und Git-HTTPS-Erreichbarkeit hin, statt die Ursache zu verschleiern. Kein unsicherer automatischer Build wird durchgeführt.
+### Neu: Unterstützung einer öffentlichen Gitea-Quelle
+- Die bislang nicht freigegebene Projektadresse `https://gitea.baerentsen.space/FrederikBaerentsen/ComicOPDS` kann jetzt direkt unter **GitHub / URL** analysiert werden.
+- Für die öffentliche Gitea-Instanz `gitea.baerentsen.space` werden Repository-Links und direkte Compose-YAML-Dateilinks mit sicherer HTTPS- und Netzwerkprüfung unterstützt. Andere, nicht freigegebene Gitea-Hosts werden weiterhin nicht automatisch abgerufen.
+- Install Monitor bestimmt nach Möglichkeit den Gitea-Standardbranch, mit Fallback auf `master` und `main`.
+- ComicOPDS: Der Hersteller veröffentlicht ein fertiges Image `gitea.baerentsen.space/frederikbaerentsen/comicopds:latest`. Statt der Quell-Compose mit `build: .` wird das offizielle imagebasierte Compose-Beispiel aus `docs/quickstart.md` bevorzugt. Kein unnötiger lokaler Docker-Build.
+- Der im Herstellerbeispiel verwendete Beispiel-Server `192.168.10.10` wird **nicht** als echte NAS-Adresse übernommen: `COMICOPDS_SERVER_BASE` muss vor der Installation konkret gesetzt werden.
+- Die Image-Verfügbarkeit wird vor der Installation separat per Registry-Manifest geprüft. Comic-Verzeichnis, Speichervolumes, Port und Anmeldung müssen kontrolliert werden.
+- Das Eingabefeld weist in DE, EN, FR, PT und ES auf unterstützte Gitea-Instanzen hin.
 
-### Tests
-- Neue Offline-Regressionstests für den normalen API-Abruf, den alternativen Forgejo-Branch-Endpunkt und den Git-HTTPS-Fallback.
-- Tests für falsche Branch-Refs, komplett gescheiterte Prüfungen und Ablehnung unsicherer Branch-Namen.
-- Alle bisherigen Build-, Git-LFS- und ZimaOS-Installations-Sicherheitsprüfungen bleiben aktiv.
+### Sicherheit und Grenzen
+- Freigegebene öffentliche Gitea-Hosts sind ausdrücklich beschränkt. HTTPS, DNS-Prüfung und Ausschluss nichtöffentlicher IP-Adressen bleiben aktiv.
+- Keine automatische Übernahme von unbestätigten Docker-Images oder fremden README-Beispielen.
+- Gitea-Projekte, die ausschließlich einen lokalen Build anbieten, benötigen weiterhin einen gesondert verifizierten Build-Kontext; Install Monitor gibt dann eine klare Fehlermeldung aus.
+- Beim Fernzugriff auf ComicOPDS sollte dessen optionale Authentifizierung eingerichtet werden. Das offizielle Beispiel enthält zunächst keinen aktiven Zugangsschutz.
 
-### Veröffentlichung
-- Backend, UI, README-Dateien, Installationsskript, Docker-Compose-Vorlage und GHCR-Workflow auf `0.2.56-beta.11` aktualisiert.
-- Ziel-Tags: `ghcr.io/isanto1306/install-monitor:0.2.56-beta.11` und `ghcr.io/isanto1306/install-monitor:beta`.
-- Der Erfolg des GitHub-Actions-Laufs und der tatsächliche Kittygram-Build auf dem NAS müssen unabhängig vom Quellcode geprüft werden.
+### Tests und Veröffentlichung
+- Offline-Regressionstests für offizielle ComicOPDS-Compose-Erkennung, Projektzuordnung, Schutz vor unpassenden Hersteller-Images, Host-Allowlist und Abweisung lokaler DNS-Ziele.
+- Backend, Oberfläche, Dokumentation, Installationsskript, Compose-Vorlage und GHCR-Workflow auf `0.2.56-beta.12` angeglichen.
+- Geplante Tags: `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.12`.
+- CI-Tests, GHCR-Push und ZimaOS-Installation müssen unabhängig voneinander erfolgreich bestätigt werden.
 
-**Versionsregel:** Diese Datei enthält ausschließlich die Hinweise zur aktuellen Beta; ältere Release Notes werden bei jedem Update ersetzt.
+**Regel:** Diese Datei enthält ausschließlich die aktuellen Release Notes. Bei jeder neuen Beta werden die vorherigen Hinweise ersetzt.
