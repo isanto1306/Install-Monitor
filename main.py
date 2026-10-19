@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.7"
+VERSION = "0.2.56-beta.8"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -5678,6 +5678,8 @@ def defer_missing_local_builds(doc: dict, selected_profiles: list[str], notes: l
 
 
 _BUILD_META = 'x-install-monitor-github'
+_CODEBERG_BUILD_META = 'x-install-monitor-codeberg'
+_CODEBERG_REPO = re.compile(r'^https://codeberg\.org/([A-Za-z0-9_.-]{1,100})/([A-Za-z0-9_.-]{1,100})$')
 _BUILD_REPO = re.compile(r'^https://github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9_.-]{1,100})$')
 _BUILD_SHA = re.compile(r'^[0-9a-f]{40}$')
 _BUILD_IMG = re.compile(r'^installmonitor-local/[a-z0-9-]+:[0-9a-f]{12}$')
@@ -5754,15 +5756,27 @@ def _validated_builds(doc: dict) -> list[dict]:
     builds = [(n, svc) for n, svc in doc['services'].items() if 'build' in svc]
     if not builds:
         return []
-    metadata = doc.get(_BUILD_META)
+    github = doc.get(_BUILD_META)
+    codeberg = doc.get(_CODEBERG_BUILD_META)
+    if github is not None and codeberg is not None:
+        raise HTTPException(400, 'Widersprüchliche Build-Quellen. Bitte die Originalquelle erneut analysieren.')
+    metadata = github if github is not None else codeberg
     if not isinstance(metadata, dict):
         name, service = builds[0]
-        raise HTTPException(400, f"{name}: Das lokale Image '{service.get('image', '')}' fehlt. Lokaler Build benötigt eine direkt analysierte GitHub-Repository-URL. Bitte GitHub-Quelle erneut analysieren.")
+        raise HTTPException(400, f"{name}: Für das lokale Image '{service.get('image', '')}' fehlt ein verifizierter GitHub- oder Codeberg-Build-Kontext. Bitte die Originalquelle erneut analysieren.")
     repo = metadata.get('repository')
     sha = metadata.get('revision')
     compose_dir = metadata.get('compose_dir', '.')
-    if not isinstance(repo, str) or not _BUILD_REPO.fullmatch(repo) or not isinstance(sha, str) or not _BUILD_SHA.fullmatch(sha):
-        raise HTTPException(400, 'Ungültiger oder unvollständiger GitHub-Build-Nachweis.')
+    provider = 'codeberg' if codeberg is not None else 'github'
+    valid_repo = (_CODEBERG_REPO.fullmatch(repo) if provider == 'codeberg'
+                  else _BUILD_REPO.fullmatch(repo)) if isinstance(repo, str) else None
+    if not valid_repo or not isinstance(sha, str) or not _BUILD_SHA.fullmatch(sha):
+        raise HTTPException(400, 'Ungültiger oder unvollständiger Build-Quellennachweis.')
+    branch = metadata.get('branch', '')
+    if provider == 'codeberg' and (not isinstance(branch, str)
+            or not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', branch)
+            or branch in ('.', '..')):
+        raise HTTPException(400, 'Codeberg-Branch für gepinnten Build ungültig.')
     _relative_build_path(compose_dir)
     result = []
     for name, svc in builds:
@@ -5789,6 +5803,7 @@ def _validated_builds(doc: dict) -> list[dict]:
         if not image.endswith(':' + sha[:12]):
             raise HTTPException(400, f'{name}: Image-Tag und GitHub-Revision stimmen nicht überein.')
         result.append({'service': name, 'image': image, 'repo': repo, 'revision': sha,
+                       'provider': provider, 'branch': branch,
                        'context': repo_context, 'dockerfile': dockerfile,
                        'target': target, 'args': build_args, 'cache_from': cache_from})
     return result
@@ -5817,6 +5832,48 @@ def _attach_github_build_context(doc: dict, project_url: str, resolved_url: str)
     _validated_builds(doc)
     return doc, [f'Lokaler Docker-Build aus {project_url} vorbereitet (Commit {sha[:12]}).',
                  'Der Build erfolgt erst nach separater Bestätigung auf dem NAS. Der Quellcode/Dockerfile kann Befehle ausführen; bitte Herkunft prüfen.']
+
+
+
+def _attach_codeberg_build_context(doc: dict, project_url: str, resolved_url: str) -> tuple[dict, list[str]]:
+    """Pin a Codeberg build to an immutable Forgejo commit before installation."""
+    match = _CODEBERG_REPO.fullmatch(project_url)
+    raw = urllib.parse.urlsplit(resolved_url)
+    parts = [urllib.parse.unquote(piece) for piece in raw.path.strip('/').split('/')]
+    if (not match or raw.hostname != 'codeberg.org' or len(parts) < 6
+            or parts[:2] != list(match.groups()) or parts[2:4] != ['raw', 'branch']):
+        return doc, ['Codeberg-Build benötigt einen geprüften Codeberg-Projektlink mit Compose-Datei aus einem Branch.']
+    owner, repo = match.groups()
+    branch = parts[4]
+    if not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', branch) or branch in ('.', '..'):
+        raise HTTPException(400, 'Codeberg-Build-Branch ist ungültig oder wird nicht unterstützt.')
+    commit_url = ('https://codeberg.org/api/v1/repos/' +
+                  urllib.parse.quote(owner, safe='') + '/' +
+                  urllib.parse.quote(repo, safe='') + '/commits/' +
+                  urllib.parse.quote(branch, safe=''))
+    try:
+        data = json.loads(_download_remote(commit_url, max_bytes=250000))
+    except (HTTPException, ValueError, TypeError) as exc:
+        raise HTTPException(503, 'Codeberg-Commit konnte nicht geprüft werden. Kein Build aus einem ungeprüften Branch.') from exc
+    sha = data.get('sha') if isinstance(data, dict) else None
+    if not isinstance(sha, str) or not _BUILD_SHA.fullmatch(sha):
+        raise HTTPException(503, 'Codeberg meldet keinen gültigen Commit. Build nicht vorbereitet.')
+    path = '/'.join(parts[5:])
+    if not _safe_github_index_path(path):
+        raise HTTPException(400, 'Ungültiger Codeberg-Compose-Dateipfad.')
+    parent = posixpath.dirname(path) or '.'
+    for name, svc in doc['services'].items():
+        if 'build' in svc:
+            safe_tag = re.sub('[^a-z0-9-]', '-', f'{repo}-{name}'.lower()).strip('-')[:90]
+            svc['image'] = f'installmonitor-local/{safe_tag}:{sha[:12]}'
+    doc[_CODEBERG_BUILD_META] = {'repository': project_url, 'revision': sha,
+                                'branch': branch, 'compose_dir': parent}
+    _validated_builds(doc)
+    return doc, [f'Codeberg-Docker-Build aus {project_url} vorbereitet (Commit {sha[:12]}).',
+                 'Ein lokales Image aus der Original-Compose wird nicht als öffentlich verfügbares Image vorausgesetzt.',
+                 'Git-LFS-Dateien werden beim NAS-Build einbezogen. Fremder Dockerfile-Code '
+                 'wird erst nach deiner ausdrücklichen Bestätigung ausgeführt.']
+
 
 
 def _archive_build_tree(repo: str, revision: str, destination: Path) -> Path:
@@ -5906,6 +5963,7 @@ def _zimaos_compose(doc: dict) -> str:
     sanitized = yaml.safe_load(yaml.safe_dump(doc))
     _validated_builds(sanitized)
     sanitized.pop(_BUILD_META, None)
+    sanitized.pop(_CODEBERG_BUILD_META, None)
     sanitized.pop(_DOC_IMAGE_PREFLIGHT, None)
     for svc in sanitized['services'].values():
         if 'build' in svc:
@@ -7568,7 +7626,10 @@ def _analyze_source_payload(payload: Source):
             project_url if payload.kind == "image" else payload.value, resolved_url, doc)
         source_notes.extend(icon_notes)
         if payload.kind == 'url' and any('build' in svc and not svc.get('image') for svc in doc['services'].values()):
-            doc, build_notes = _attach_github_build_context(doc, project_url, resolved_url)
+            if project_url.startswith('https://codeberg.org/'):
+                doc, build_notes = _attach_codeberg_build_context(doc, project_url, resolved_url)
+            else:
+                doc, build_notes = _attach_github_build_context(doc, project_url, resolved_url)
             source_notes.extend(build_notes)
             content = yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, default_flow_style=False)
         image_notes = (_published_images_in_readme(project_url, resolved_url, doc, image_suggestions)
