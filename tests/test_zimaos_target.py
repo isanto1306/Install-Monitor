@@ -57,6 +57,8 @@ class RoutingTests(unittest.TestCase):
 
         ns = {
             "urllib": urllib,
+            "Install": Payload,
+            "Request": object,
             "os": os,
             "HTTPException": HTTPException,
             "_proxy_hosts": lambda: {"im.example.org"},
