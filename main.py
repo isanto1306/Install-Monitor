@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.2"
+VERSION = "0.2.56-beta.3"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -284,6 +284,9 @@ class Install(BaseModel):
     confirmed: bool = False
     build_confirmed: bool = False
     totp_code: str = Field(default="", max_length=8)
+    # Optional LAN endpoint when a public, allowlisted proxy hostname is used.
+    # Never stored or passed to the installation job status/UI.
+    internal_host: str = Field(default="", max_length=256)
     target_system: str = Field(default="zimaos", pattern=r"^(zimaos|casaos|docker)$")
 
 
@@ -306,6 +309,7 @@ class ChangePort(PortScan):
 
 
 class Check(BaseModel):
+    internal_host: str = Field(default="", max_length=256)
     host: str = Field(min_length=1, max_length=256)
     username: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=1024)
@@ -1190,18 +1194,27 @@ def _proxy_guard(req: Request, payload: Install) -> None:
 
 
 
-def _internal_zimaos_target() -> str:
-    """Fixed administrator-configured LAN destination for reverse-proxy access.
+def _internal_zimaos_target(entered_host: str = "") -> str:
+    """Resolve an explicit LAN endpoint, or the optional administrator default.
 
-    The user-supplied public hostname is NEVER used as the ZimaOS API target.
+    The public proxy is authentication-only and must NEVER be used as the NAS
+    API target. All internal destinations are validated by safe_host against
+    loopback, LAN and Tailscale address ranges (including resolved DNS).
     """
-    configured = os.getenv('IM_INTERNAL_ZIMAOS_URL', '').strip()
+    configured = str(entered_host or "").strip() or os.getenv('IM_INTERNAL_ZIMAOS_URL', '').strip()
+    if not configured:
+        raise HTTPException(
+            400,
+            'Bitte die interne ZimaOS-Adresse eintragen (z. B. http://NAS-LAN-IP). '
+            'Die Install-Monitor-Reverse-Proxy-Domain ist nicht die ZimaOS-Adresse.'
+        )
     parsed = urllib.parse.urlsplit(_normalized_zima_host(configured))
     if parsed.scheme not in ('http', 'https') or not parsed.hostname:
-        raise HTTPException(503, 'Interne ZimaOS-Adresse ist ungültig (IM_INTERNAL_ZIMAOS_URL).')
-    # safe_host checks that all resolved addresses belong to private ranges.
+        raise HTTPException(400, 'Interne ZimaOS-Adresse muss eine gültige LAN-IP oder ein lokaler Hostname sein.')
     if parsed.hostname.lower() in _proxy_hosts():
-        raise HTTPException(503, 'Interne ZimaOS-Adresse darf kein freigegebener Reverse-Proxy-Host sein.')
+        raise HTTPException(400, 'Als interne ZimaOS-Adresse eine LAN-IP statt der Reverse-Proxy-Domain eingeben.')
+    # Explicit internal hosts and environment-provided defaults use the same
+    # private-destination validation; never follow a public DNS target.
     return safe_host(configured)
 
 
@@ -1210,17 +1223,17 @@ def _install_target(req: Request, payload: Install) -> Install:
     submitted = urllib.parse.urlsplit(_normalized_zima_host(payload.host))
     if submitted.hostname and submitted.hostname.lower() in _proxy_hosts():
         _proxy_guard(req, payload)
-        local_target = _internal_zimaos_target()
+        local_target = _internal_zimaos_target(payload.internal_host)
         return payload.model_copy(update={'host': local_target})
     # Never silently map non-allowlisted external destinations to the NAS.
     return payload.model_copy(update={'host': safe_host(payload.host)})
 
 
-def _check_target(host: str) -> str:
-    """Read-only verification uses the same fixed internal API target."""
+def _check_target(host: str, internal_host: str = "") -> str:
+    """Read-only verification uses the same validated private API destination."""
     submitted = urllib.parse.urlsplit(_normalized_zima_host(host))
     if submitted.hostname and submitted.hostname.lower() in _proxy_hosts():
-        return _internal_zimaos_target()
+        return _internal_zimaos_target(internal_host)
     return safe_host(host)
 
 
@@ -8310,7 +8323,7 @@ def installation_job(req: Request, job_id: str):
 def check(req: Request, payload: Check):
     require_write(req)
     name = slug(payload.name)
-    base = _check_target(payload.host)
+    base = _check_target(payload.host, payload.internal_host)
     token = zima_login(base, payload.username, payload.password)
     code, raw = api_call(base, f"/v2/app_management/compose/{name}/containers", "GET", token=token)
     if code != 200:
