@@ -3952,11 +3952,13 @@ def _discover_codeberg_project(owner: str, repo: str) -> tuple[str, str, list[st
     # The root Compose always receives a chance, even with many indexed YAMLs.
     ordered = list(filenames)
     ordered.extend(path for path in ranked if path not in filenames)
-    attempts = 0
-    max_probes = 28
+    # Each branch gets a bounded chance; a missing main branch must not
+    # consume the entire probe budget and prevent checking master.
+    max_probes_per_branch = 32
     for branch in branches:
+        attempts = 0
         for filename in ordered:
-            if attempts >= max_probes:
+            if attempts >= max_probes_per_branch:
                 break
             if not _safe_github_index_path(filename) or _github_deploy_score(filename, repo) < 0:
                 continue
@@ -3981,8 +3983,6 @@ def _discover_codeberg_project(owner: str, repo: str) -> tuple[str, str, list[st
                     'nicht automatisch übertragen. Ohne veröffentlichtes Image und '
                     'vollständigen Build-Kontext ist die direkte ZimaOS-Installation gesperrt.')
             return source, raw, notes
-        if attempts >= max_probes:
-            break
     raise HTTPException(
         422, 'In diesem Codeberg-Projekt wurde keine geprüfte Compose-Datei gefunden. '
         'Bitte eine gültige direkte Compose-YAML-Adresse oder das dokumentierte Docker-Image verwenden.')
