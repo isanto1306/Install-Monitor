@@ -4112,7 +4112,7 @@ def _discover_gitea_publisher(host: str, owner: str, repo: str) -> tuple[str, st
                             and not svc.get('build')]
                 if len(matching) != 1 or any('build' in svc for svc in doc['services'].values()):
                     continue
-                # Never silently use the example IP 192.168.10.10 from the README.
+                # Never silently use the example IP NAS-EXAMPLE from the README.
                 matching[0].setdefault('environment', {})['SERVER_BASE'] = chr(36) + '{COMICOPDS_SERVER_BASE}'
                 doc['name'] = 'comicopds'
                 doc[_DOC_IMAGE_PREFLIGHT] = True
