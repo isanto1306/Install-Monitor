@@ -1,28 +1,27 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.56 Beta 9 (19.10.2026)
+## Version 0.2.56 Beta 10 (19.10.2026)
 
-### Behoben: Codeberg-Projekte mit Docker-Anleitung in der README
-- Bei Codeberg-Projekten ohne eigenständige `compose.yml`, `compose.yaml` oder `docker-compose.yml` wird jetzt auch die Original-README beziehungsweise die veröffentlichte Docker-Installationsdokumentation auf vollständige Compose-Beispiele geprüft.
-- Markdown-Codeblöcke (`yaml`, `yml`, `compose`, `docker-compose`) werden nur als Docker Compose übernommen, wenn sie einen vollständigen, gültigen `services`-Block mit konkreten Docker-Images enthalten.
-- Die Compose-Konfiguration muss mindestens ein Image enthalten, dessen Registry-Pfad exakt zum Eigentümer und Namen des Codeberg-Projekts passt. Unzugehörige Beispiel-Stacks werden nicht übernommen.
-- Die Quelle wird als **README-Beispiel** ausgewiesen, nicht fälschlich als eigenständige Compose-Datei. Container-Images aus solchen Anleitungen erhalten eine verpflichtende Registry-Manifestprüfung vor jedem Installationsauftrag.
-- Der direkte Compose-Dateifund bleibt bevorzugt. README-Beispiele sind ausschließlich ein Fallback.
+### Behoben: Codeberg-Build bei `image:` und `build:`
+- Ein Docker-Compose-Dienst kann zugleich ein Image-Tag und einen lokalen Build-Kontext festlegen. Bisher übersprang Install Monitor in genau diesem Fall die Erzeugung eines überprüfbaren Build-Kontexts.
+- Die automatische Analyse erkennt jetzt jedes ausdrücklich angegebene `build:`, unabhängig davon, ob zusätzlich ein `image:` existiert.
+- Für direkt analysierte Codeberg-Projekte prüft Install Monitor den Publisher-Commit, vergleicht die geladene Compose mit der Version dieses Commits und fügt den Build-Nachweis `x-install-monitor-codeberg` hinzu.
+- Der Originalname `kittygram:latest` wird für den bestätigten lokalen Build durch ein commitgebundenes Image `installmonitor-local/kittygram-kittygram:<12-stelliger-Commit>` ersetzt.
+- Derselbe Fehler ist in der GitHub-Build-Vorbereitung behoben. Die ursprüngliche `build:`-Anweisung bleibt bis zum bestätigten lokalen Build im Entwurf enthalten; vor Übergabe an ZimaOS wird sie ordnungsgemäß entfernt.
 
-### Beispiel: DanB/RSS
-- `https://codeberg.org/danb/rss` enthält eine dokumentierte Docker-Compose-Konfiguration, obwohl keine eigenständige Compose-Datei gefunden wird.
-- Verwendetes offizielles Image: `codeberg.org/danb/rss:latest`. Docker-Build ist hierfür **nicht** erforderlich.
-- Die README-Installation nutzt Container-Port `80` und ein persistentes Verzeichnis unter `/app/storage`. Im Install Monitor sind Host-Port und AppData-Ordner vor der Installation auswählbar.
-- Sicherheit: DanB/RSS bietet laut Dokumentation keinen eingebauten Anmeldeschutz. Keine ungeschützte Veröffentlichung ins Internet; Zugriff durch Netzwerksegmentierung oder vorgeschaltete Authentifizierung absichern.
+### Regressionstests
+- Durchgängiger Offline-Test des Analyseablaufs eines Codeberg-Projekts mit **beiden** Schlüsseln `image:` und `build:`.
+- Überprüfung des lokal erzeugten Image-Namens, der unveränderten Zusatzdienste und des erforderlichen Build-Nachweises.
+- GitHub-Test für bereits vorhandene Image-Tags mit `build:`.
+- Die vorhandenen Sicherheitsprüfungen für verifizierte Commits, Git LFS, Docker-Build-Bestätigung und private Registry bleiben aktiv.
 
-### Sicherheit und Tests
-- Unvollständige YAML-Fragmente, nicht zugehörige Images und lokale Build-Beispiele ohne fertiges Image werden nicht automatisch als installierbar eingestuft.
-- Offline-Regressionstests für README-Fallback, Publisher-Image-Abgleich, unvollständige Compose-Beispiele und Vorrang einer echten Compose-Datei ergänzt.
-- Unveränderte Funktionen: Github-/Codeberg-Builds, ZimaOS-App-Registrierung und bestehende Docker-Image-Installationen.
+### Benutzung
+- Für Kittygram die originale Projektadresse `https://codeberg.org/irelephant/kittygram` unter **GitHub / URL** neu analysieren. Nicht die alte Compose-Datei aus dem Editor wiederverwenden: Ihr fehlt der signierte Build-Kontext aus der Quellanalyse.
+- Ein lokaler Build führt fremde Dockerfile-Anweisungen aus und erfordert daher die ausdrückliche Bestätigung vor der Installation.
+- Ein erfolgreiches Image-Build beziehungsweise ein ZimaOS-Live-Test wird erst nach separater Überprüfung bestätigt.
 
 ### Veröffentlichung
-- Backend, Oberfläche, Docker-Compose-Vorlage, Installationsskript, Dokumentation und GHCR-Publish-Workflow auf `0.2.56-beta.9` aktualisiert.
-- Ziel-Tags: `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.9`.
-- Erfolgreicher CI-Testlauf, GHCR-Push und tatsächliche ZimaOS-Installation sind erst nach separater Überprüfung bestätigt.
+- Backend, Frontend, Dokumentation, Installationsskript, lokale Compose-Vorlage und GitHub-Actions-Workflow auf `0.2.56-beta.10` aktualisiert.
+- Vorgesehene GHCR-Tags: `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.10`.
 
-**Versionsregel:** Diese Datei enthält ausschließlich die aktuellen Release Notes. Beim nächsten Update werden ältere Einträge ersetzt und nicht angehängt.
+**Release-Notes-Regel:** Diese Datei enthält ausschließlich die aktuelle Beta. Bei der nächsten Version wird sie vollständig ersetzt, nicht angehängt.
