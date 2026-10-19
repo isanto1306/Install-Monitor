@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.3"
+VERSION = "0.2.56-beta.4"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -4157,6 +4157,31 @@ def _declared_host_network_port(doc: dict, service: str) -> int | None:
         raw = _get_service_environment(config, 'ORANGUTAN_PORT').strip()
         if re.fullmatch(r'[0-9]{1,5}', raw) and 1 <= int(raw) <= 65535:
             return int(raw)
+    # NetAlertX official host-network Compose declares both web and GraphQL
+    # ports through environment values. Do not infer arbitrary PORT variables
+    # for other images; these defaults are publisher-specific.
+    if _is_netalertx_image(image):
+        return _netalertx_declared_port(config, 'PORT')
+    return None
+
+
+
+def _is_netalertx_image(image: str) -> bool:
+    return image.split('@', 1)[0].split(':', 1)[0].lower() == 'ghcr.io/netalertx/netalertx'
+
+
+def _netalertx_declared_port(config: dict, key: str) -> int | None:
+    """Read a concrete official NetAlertX PORT/GRAPHQL_PORT declaration.
+
+    Compose interpolation like ${PORT:-20211} has a literal default.
+    A variable with no default cannot safely be guessed.
+    """
+    raw = _get_service_environment(config, key).strip()
+    match = re.fullmatch(r'\$\{' + re.escape(key) + r':?-(\d{1,5})\}', raw)
+    if match:
+        raw = match.group(1)
+    if re.fullmatch(r'\d{1,5}', raw) and 1 <= int(raw) <= 65535:
+        return int(raw)
     return None
 
 
@@ -4181,6 +4206,15 @@ def _bindings(doc: dict) -> list[dict]:
             items.append({"service": service, "index": -1, "host_port": declared_port,
                           "target_port": declared_port, "protocol": "tcp", "host_ip": "",
                           "host_network": True})
+            if _is_netalertx_image(str(config.get('image') or '')):
+                graphql_port = _netalertx_declared_port(config, 'GRAPHQL_PORT')
+                if graphql_port is None:
+                    raise HTTPException(400, f"{service}: NetAlertX GRAPHQL_PORT ist nicht eindeutig aufgelöst. Bitte einen konkreten Port oder einen Compose-Default angeben.")
+                if graphql_port == declared_port:
+                    raise HTTPException(400, f"{service}: NetAlertX PORT und GRAPHQL_PORT dürfen nicht identisch sein.")
+                items.append({"service": service, "index": -2, "host_port": graphql_port,
+                              "target_port": graphql_port, "protocol": "tcp", "host_ip": "",
+                              "host_network": True})
             continue
         if not isinstance(raw_ports, list):
             raise HTTPException(400, f"{service}: 'ports' muss eine Liste sein.")
