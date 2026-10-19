@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.6"
+VERSION = "0.2.56-beta.7"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -1972,6 +1972,10 @@ def _project_info(original: str, resolved: str, data: dict) -> tuple[str, str, l
         sections = resolved_parts.path.strip("/").split("/")
         if len(sections) >= 3:
             owner, repo = sections[:2]
+    if original_parts.hostname == 'codeberg.org':
+        pieces = original_parts.path.strip('/').split('/')
+        if len(pieces) >= 2 and all(GITHUB_PART.fullmatch(part) for part in pieces[:2]):
+            return f"https://codeberg.org/{pieces[0]}/{pieces[1]}", meta_icon, []
     if not (GITHUB_PART.fullmatch(owner) and GITHUB_PART.fullmatch(repo)):
         return "", meta_icon, []
     project = f"https://github.com/{owner}/{repo}"
@@ -3898,6 +3902,93 @@ def _discover_gitlab_project(namespace: str) -> tuple[str, str, list[str]]:
     raise HTTPException(422,'Keine vollständige Compose-Datei in diesem GitLab-Projekt erkannt. Bitte eine direkte Compose-URL oder YAML verwenden.')
 
 
+
+def _discover_codeberg_project(owner: str, repo: str) -> tuple[str, str, list[str]]:
+    """Find genuine Compose in a Codeberg/Forgejo project, never execute source.
+
+    The public Forgejo API may be unavailable or rate-limited; root and common
+    deployment folders are probed over its HTTPS raw endpoint as a fallback.
+    Only a bounded number of YAML candidates are downloaded and parsed.
+    """
+    if not (GITHUB_PART.fullmatch(owner) and GITHUB_PART.fullmatch(repo)):
+        raise HTTPException(400, 'Ungültiges Codeberg-Repository.')
+    api = 'https://codeberg.org/api/v1/repos/' + '/'.join(
+        urllib.parse.quote(piece, safe='') for piece in (owner, repo))
+    branches = []
+    indexed_paths: set[str] = set()
+    try:
+        metadata = json.loads(_download_remote(api, max_bytes=250000))
+        branch = metadata.get('default_branch') if isinstance(metadata, dict) else None
+        if isinstance(branch, str) and re.fullmatch(r'[A-Za-z0-9._/-]{1,120}', branch) and all(
+                piece not in ('', '.', '..') for piece in branch.split('/')):
+            branches.append(branch)
+            try:
+                tree_url = (api + '/git/trees/' + urllib.parse.quote(branch, safe='')
+                            + '?recursive=true')
+                tree = json.loads(_download_remote(tree_url, max_bytes=1500000))
+                entries = tree.get('tree', []) if isinstance(tree, dict) else []
+                if isinstance(entries, list):
+                    for item in entries[:10000]:
+                        if not isinstance(item, dict) or item.get('type') != 'blob':
+                            continue
+                        candidate = item.get('path')
+                        if (isinstance(candidate, str) and _safe_github_index_path(candidate)
+                                and _github_deploy_score(candidate, repo) >= 0):
+                            indexed_paths.add(candidate)
+            except (HTTPException, ValueError, TypeError):
+                pass  # No tree index: probe known filenames, not the whole repo.
+    except (HTTPException, ValueError, TypeError):
+        pass
+    for fallback in ('main', 'master'):
+        if fallback not in branches:
+            branches.append(fallback)
+
+    filenames = ('compose.yaml', 'compose.yml', 'docker-compose.yml', 'docker-compose.yaml')
+    folders = ('', 'docker/', '_docker/', 'deploy/', 'deployment/', 'install/',
+               'container/', 'containers/', 'docker/compose/', 'install/docker/')
+    conventional = {directory + filename for directory in folders for filename in filenames}
+    ranked = sorted(indexed_paths | conventional,
+                    key=lambda item: (-_github_deploy_score(item, repo), len(item), item))
+    # The root Compose always receives a chance, even with many indexed YAMLs.
+    ordered = list(filenames)
+    ordered.extend(path for path in ranked if path not in filenames)
+    attempts = 0
+    max_probes = 28
+    for branch in branches:
+        for filename in ordered:
+            if attempts >= max_probes:
+                break
+            if not _safe_github_index_path(filename) or _github_deploy_score(filename, repo) < 0:
+                continue
+            attempts += 1
+            raw = ('https://codeberg.org/' +
+                   '/'.join(urllib.parse.quote(piece, safe='') for piece in (owner, repo)) +
+                   '/raw/branch/' + urllib.parse.quote(branch, safe='') + '/' +
+                   '/'.join(urllib.parse.quote(piece, safe='') for piece in filename.split('/')))
+            try:
+                source = _download_remote(raw)
+                evaluated, _ = _resolve_compose_variables(source)
+                compose = safe_yaml(evaluated)
+            except (HTTPException, ValueError, yaml.YAMLError):
+                continue
+            notes = [
+                f'Codeberg: Docker-Compose-Datei in {filename} gefunden (Branch {branch}).',
+                'Original-YAML geprüft; Ports, Datenpfade, Zugangsdaten und Abhängigkeiten vor Installation kontrollieren.',
+            ]
+            if any('build' in service for service in compose['services'].values()):
+                notes.append(
+                    'Lokaler Docker-Build erforderlich: Codeberg-Build-Kontext wird derzeit '
+                    'nicht automatisch übertragen. Ohne veröffentlichtes Image und '
+                    'vollständigen Build-Kontext ist die direkte ZimaOS-Installation gesperrt.')
+            return source, raw, notes
+        if attempts >= max_probes:
+            break
+    raise HTTPException(
+        422, 'In diesem Codeberg-Projekt wurde keine geprüfte Compose-Datei gefunden. '
+        'Bitte eine gültige direkte Compose-YAML-Adresse oder das dokumentierte Docker-Image verwenden.')
+
+
+
 def discover_source(value: str) -> tuple[str, str, list[str]]:
     value = value.strip()
     if len(value) > 2048:
@@ -3915,6 +4006,26 @@ def discover_source(value: str) -> tuple[str, str, list[str]]:
             raw = "https://raw.githubusercontent.com/" + "/".join(urllib.parse.quote(x, safe="") for x in [parts[0], parts[1], parts[3], *parts[4:]])
             return _download_remote(raw), raw, []
         raise HTTPException(400, "Bitte einen GitHub-Repository-/Release-Link oder die direkte Compose-YAML-Datei verwenden.")
+    if p.hostname and p.hostname.lower() == 'codeberg.org':
+        parts = [urllib.parse.unquote(part) for part in p.path.strip('/').split('/')]
+        if len(parts) == 2:
+            return _discover_codeberg_project(*parts)
+        if (len(parts) >= 6 and parts[2] in ('src', 'raw')
+                and parts[3] in ('branch', 'tag', 'commit')):
+            owner, repo, _, ref_kind, ref = parts[:5]
+            path = parts[5:]
+            if not (GITHUB_PART.fullmatch(owner) and GITHUB_PART.fullmatch(repo)
+                    and GITHUB_PART.fullmatch(ref) and
+                    all(_safe_github_index_path(piece) for piece in path)):
+                raise HTTPException(400, 'Ungültiger Codeberg-Dateipfad.')
+            if not path[-1].lower().endswith(('.yml', '.yaml')):
+                raise HTTPException(400, 'Der Codeberg-Dateilink verweist nicht auf eine YAML-Datei.')
+            raw = ('https://codeberg.org/' + urllib.parse.quote(owner, safe='') + '/'
+                   + urllib.parse.quote(repo, safe='') + '/raw/' + ref_kind + '/'
+                   + urllib.parse.quote(ref, safe='') + '/' +
+                   '/'.join(urllib.parse.quote(piece, safe='') for piece in path))
+            return _download_remote(raw), raw, []
+        raise HTTPException(400, 'Bitte einen Codeberg-Projektlink oder eine direkte Compose-YAML-Adresse verwenden.')
     if p.hostname and p.hostname.lower() == 'gitlab.com':
         path=p.path.strip('/')
         if '/-/blob/' in path:
@@ -7470,7 +7581,7 @@ def _analyze_source_payload(payload: Source):
         icon_url = upstream_icon if isinstance(upstream_icon, str) and upstream_icon.startswith("https://") else ""
     if isinstance(doc.get('name'), str) and doc['name'].strip():
         name = doc['name']
-    elif payload.kind == 'url' and project_url.startswith('https://github.com/'):
+    elif payload.kind == 'url' and project_url.startswith(('https://github.com/', 'https://codeberg.org/')):
         # A multi-service app often declares infrastructure (postgres, redis)
         # first. Use its repository identity instead of naming the whole app
         # after the database container.
