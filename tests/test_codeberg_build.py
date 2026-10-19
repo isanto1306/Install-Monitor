@@ -51,12 +51,15 @@ class CodebergBuildTests(unittest.TestCase):
         self.assertNotIn('build:', yaml_out)
 
     def test_reviewed_compose_must_match_pinned_commit(self):
-        with patch.object(im, '_download_remote', return_value='services: {}'):
+        def changed_remote(url, max_bytes=524288):
+            if url.endswith('/commits/main'):
+                return '{"sha":"' + self.REVISION + '"}'
+            return 'services: {}'
+        with patch.object(im, '_download_remote', side_effect=changed_remote):
             with self.assertRaises(im.HTTPException) as ctx:
                 im._attach_codeberg_build_context(
                     self.document(), self.REPO, self.BRANCH_RAW, self.YAML)
-        # Mocking commit response must be valid to reach the content comparison.
-        self.assertIn(ctx.exception.status_code, (409, 503))
+        self.assertEqual(ctx.exception.status_code, 409)
 
     def test_unpinned_and_forged_build_metadata_rejected(self):
         doc = self.document()
