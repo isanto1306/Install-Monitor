@@ -5923,12 +5923,119 @@ def _archive_build_tree(repo: str, revision: str, destination: Path) -> Path:
     return destination
 
 
+
+def _archive_codeberg_tree(repo: str, branch: str, revision: str, destination: Path) -> Path:
+    """Obtain a pinned Codeberg checkout including bounded Git LFS files.
+
+    Only the exact public Codeberg repository is cloned; no submodules, hooks
+    or external build scripts are executed by this source-acquisition step.
+    Git LFS is pinned to the canonical same-repository endpoint so an
+    untrusted .lfsconfig cannot switch downloads to private network hosts.
+    """
+    match = _CODEBERG_REPO.fullmatch(repo)
+    if (not match or not _BUILD_SHA.fullmatch(revision)
+            or not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', branch)
+            or branch in ('.', '..')):
+        raise HTTPException(400, 'Codeberg-Buildquelle oder Commit ungültig.')
+    owner, project = match.groups()
+    remote = f'https://codeberg.org/{owner}/{project}.git'
+    lfs_endpoint = remote + '/info/lfs'
+    env = os.environ.copy()
+    env.update({
+        'GIT_TERMINAL_PROMPT': '0',
+        'GIT_LFS_SKIP_SMUDGE': '1',
+        'GIT_CONFIG_NOSYSTEM': '1',
+        'GIT_CONFIG_GLOBAL': os.devnull,
+        'GIT_ALLOW_PROTOCOL': 'https',
+        'GIT_LFS_FORCE_PROGRESS': '0',
+    })
+    def git(arguments: list[str], timeout: int = 180) -> str:
+        try:
+            result = subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', *arguments],
+                                    env=env, capture_output=True, text=True,
+                                    timeout=timeout, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise HTTPException(502, 'Codeberg-Git/Git-LFS ist nicht verfügbar oder hat das Zeitlimit überschritten.') from exc
+        if result.returncode:
+            raise HTTPException(502, 'Codeberg-Quellcode oder Git-LFS-Dateien konnten nicht abgerufen werden. Git-/LFS-Verbindung am NAS prüfen.')
+        return result.stdout
+
+    git(['clone', '--depth=1', '--single-branch', '--no-tags', '--no-checkout',
+         '--branch', branch, remote, str(destination)], 240)
+    if git(['-C', str(destination), 'rev-parse', 'HEAD']).strip() != revision:
+        raise HTTPException(409, 'Der Codeberg-Branch wurde seit der Analyse verändert. Quelle erneut analysieren; kein Build ausgeführt.')
+    git(['-C', str(destination), 'checkout', '--force', revision], 120)
+
+    def measure() -> tuple[int, int]:
+        count = total = 0
+        for current, dirs, files in os.walk(destination, followlinks=False):
+            if '.git' in dirs:
+                # Count git objects too, but do not inspect Git's internal tree.
+                gitdir = Path(current) / '.git'
+                count += 1
+                for directory, _, filenames in os.walk(gitdir, followlinks=False):
+                    for filename in filenames:
+                        path = Path(directory) / filename
+                        total += path.lstat().st_size
+                dirs.remove('.git')
+            for filename in files:
+                item = Path(current) / filename
+                if item.is_symlink():
+                    continue
+                count += 1
+                total += item.lstat().st_size
+                if count > 12000 or total > 512 * 1024 * 1024:
+                    raise HTTPException(400, 'Codeberg-Build-Kontext überschreitet Sicherheitslimits (12.000 Dateien oder 512 MB).')
+        return count, total
+
+    files_before, size_before = measure()
+    if size_before > 160 * 1024 * 1024:
+        raise HTTPException(400, 'Codeberg-Quellcode ist ohne LFS bereits größer als 160 MB.')
+    names = git(['-C', str(destination), 'lfs', 'ls-files', '--name-only'], 30).splitlines()
+    if len(names) > 2500:
+        raise HTTPException(400, 'Codeberg-Projekt enthält zu viele Git-LFS-Dateien.')
+    lfs_size = 0
+    for name in names:
+        if (not _safe_github_index_path(name)
+                or any(ord(c) < 32 for c in name)):
+            raise HTTPException(400, 'Unsicherer Git-LFS-Dateipfad.')
+        path = destination / name
+        if not path.is_file() or path.is_symlink():
+            raise HTTPException(400, 'Git-LFS-Datei oder Pointer fehlt im ausgecheckten Quellcode.')
+        pointer = path.read_bytes()[:512]
+        match_size = re.search(rb'(?m)^size (\d+)$', pointer)
+        if not pointer.startswith(b'version https://git-lfs.github.com/spec/v1\n') or not match_size:
+            raise HTTPException(400, 'Git-LFS-Datei hat keinen gültigen Größen-Pointer.')
+        lfs_size += int(match_size.group(1))
+        if lfs_size > 256 * 1024 * 1024:
+            raise HTTPException(400, 'Codeberg-Git-LFS-Daten überschreiten 256 MB. Bitte Image manuell bauen.')
+    if names:
+        git(['-C', str(destination), '-c', f'lfs.url={lfs_endpoint}',
+             'lfs', 'pull', 'origin'], 300)
+        for name in names:
+            path = destination / name
+            if not path.is_file() or path.is_symlink():
+                raise HTTPException(400, 'Git-LFS-Checkout nach dem Download unvollständig.')
+            if path.read_bytes()[:64].startswith(b'version https://git-lfs.github.com/spec/v1'):
+                raise HTTPException(400, 'Git-LFS-Pointer blieb unaufgelöst. Kein Docker-Build gestartet.')
+    measure()
+    return destination
+
+
+
 def _build_local_images(doc: dict, job_id: str) -> None:
     specs = _validated_builds(doc)
     if not specs:
         return
-    with tempfile.TemporaryDirectory(prefix='im-github-build-') as work:
-        tree = _archive_build_tree(specs[0]['repo'], specs[0]['revision'], Path(work))
+    provider = specs[0].get('provider', 'github')
+    with tempfile.TemporaryDirectory(prefix='im-source-build-') as work:
+        target = Path(work) / 'source'
+        if provider == 'codeberg':
+            tree = _archive_codeberg_tree(specs[0]['repo'], specs[0]['branch'],
+                                          specs[0]['revision'], target)
+        else:
+            target.mkdir()
+            tree = _archive_build_tree(specs[0]['repo'], specs[0]['revision'], target)
         for spec in specs:
             if local_image_available(spec['image']):
                 _job_update(job_id, events=f"{spec['service']}: geprüftes lokales Image bereits vorhanden.")
@@ -5936,8 +6043,8 @@ def _build_local_images(doc: dict, job_id: str) -> None:
             context = tree / spec['context']
             dockerfile = context / spec['dockerfile']
             if not context.is_dir() or not dockerfile.is_file() or dockerfile.is_symlink():
-                raise HTTPException(400, f"{spec['service']}: Dockerfile oder Build-Kontext nicht im GitHub-Commit gefunden.")
-            _job_update(job_id, phase='build', message=f"Baue {spec['service']} aus GitHub-Quellcode auf dem NAS.",
+                raise HTTPException(400, f"{spec['service']}: Dockerfile oder Build-Kontext im geprüften {spec['provider']}-Commit nicht gefunden.")
+            _job_update(job_id, phase='build', message=f"Baue {spec['service']} aus {spec['provider']}-Quellcode auf dem NAS.",
                         events=f"Docker-Build {spec['service']} · Commit {spec['revision'][:12]} begonnen.")
             cmd = ['docker', 'build', '--pull', '--tag', spec['image'], '--file', str(dockerfile)]
             if spec['target']:
@@ -6314,7 +6421,7 @@ def build_plan(p: Plan) -> dict:
         try:
             specs = _validated_builds(data)
             for item in specs:
-                preparation_notes.append(f"{item['service']}: GitHub-Quellcode wird auf dem NAS gebaut. Das Image wird nicht durch ein fremdes oder altes Image ersetzt.")
+                preparation_notes.append(f"{item['service']}: {item['provider']}-Quellcode (Commit {item['revision'][:12]}) wird auf dem NAS gebaut. Das Image wird nicht durch ein fremdes oder altes Image ersetzt.")
         except HTTPException as exc:
             activation_errors.append(str(exc.detail))
     root = (p.data_dir.strip().rstrip("/") or f"/DATA/AppData/{name}")
@@ -8406,7 +8513,7 @@ def _job_worker(job_id: str, payload: Install) -> None:
         if local_mode and _read_compose_containers(name):
             raise HTTPException(409, 'Docker-Compose-Projekt ist bereits vorhanden. Keine bestehende Installation wird überschrieben.')
         if any('build' in svc for svc in doc['services'].values()):
-            _job_update(job_id, phase='build', message='GitHub-Quellcode und Docker-Image werden vorbereitet.', events='Lokaler Build bestätigt.')
+            _job_update(job_id, phase='build', message='Quellcode und Docker-Image werden vorbereitet.', events='Lokaler Build bestätigt.')
             _build_local_images(doc, job_id)
         _job_update(job_id, phase='directories', message='App-Datenordner werden erstellt und geprüft.', events='ZimaOS-Anmeldung erfolgreich.')
         prepared = prepare_app_directories(doc, name)
