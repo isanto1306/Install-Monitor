@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.5"
+VERSION = "0.2.56-beta.6"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -3722,6 +3722,161 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
     defaults: set[str] = set()
     unresolved: set[str] = set()
 
+    # The publisher defines this HealthLog-specific HMAC key as a local,
+    # 32-byte random value (64 lowercase hex chars), not an external API token.
+    healthlog_image = any(
+        isinstance(svc, dict) and (
+            str(svc.get('image') or '').lower() == 'ghcr.io/mbombeck/healthlog'
+            or str(svc.get('image') or '').lower().startswith((
+                'ghcr.io/mbombeck/healthlog:',
+                'ghcr.io/mbombeck/healthlog@',
+                'ghcr.io/mbombeck/healthlog
+        # Compose conditional + operators for optional variables. Match an
+        # optional nested ${VAR} expression before expanding inner tokens.
+        optional_condition = re.compile(
+            r'\$\{[A-Za-z_][A-Za-z0-9_]*(?::\+|\+)(?:[^{}]|\$\{[^{}]*\})*\}')
+        result = optional_condition.sub('', value)
+        for _ in range(16):
+            def substitute(match: re.Match) -> str:
+                name, operator, fallback = match.groups()
+                if name in generated:
+                    return generated[name]
+                # Required Compose forms ${VAR:?message} / ${VAR?message}:
+                # generate only credentials, never guess an existing host path.
+                if operator in (':?', '?'):
+                    if local_secret_name(name):
+                        generated[name] = _im_generate_local_secret(name, doc)
+                        return generated[name]
+                    unresolved.add(name)
+                    return match.group(0)
+                # Empty defaults mean optional/unconfigured. Don't enable optional
+                # authentication/tunnel/OIDC credentials with invented secrets.
+                if operator is not None and fallback == '':
+                    defaults.add(name)
+                    return ''
+                if local_secret_name(name) and name != 'ACCESS_TOKEN_URL':
+                    generated[name] = _im_generate_local_secret(name, doc)
+                    return generated[name]
+                if operator is not None:
+                    defaults.add(name)
+                    return fallback or ''
+                unresolved.add(name)
+                return match.group(0)
+
+            nxt = token.sub(substitute, result)
+            if nxt == result:
+                break
+            result = nxt
+        return result
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return expand(value)
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        if isinstance(value, dict):
+            return {key: walk(item) for key, item in value.items()}
+        return value
+
+    # Do not mutate the descriptive CasaOS metadata. The x-casaos.port_map is
+    # runtime-relevant and must be resolved before installation.
+    for key in ('services', 'networks', 'volumes', 'secrets', 'configs', 'name'):
+        if key in doc:
+            doc[key] = walk(doc[key])
+    casa = doc.get('x-casaos')
+    if isinstance(casa, dict):
+        for field in ('port_map', 'hostname', 'scheme', 'index', 'icon'):
+            if field in casa:
+                casa[field] = walk(casa[field])
+
+    notes = []
+    if generated:
+        notes.append('Zufällig erzeugte Zugangswerte: ' + ', '.join(sorted(generated)) + '. Vor Installation prüfen und sicher aufbewahren.')
+    if defaults:
+        notes.append('Compose-Standardwerte eingesetzt für: ' + ', '.join(sorted(defaults)) + '.')
+    unresolved = _unresolved_runtime_variables(doc)
+    if unresolved:
+        notes.append('Diese Variablen brauchen konkrete Werte: ' + ', '.join(sorted(unresolved)) + '.')
+    return yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, default_flow_style=False), notes
+
+,
+            ))
+        ) for svc in (doc.get('services') or {}).values()
+    )
+
+    def local_secret_name(name: str) -> bool:
+        standard = bool(re.search(r'(?:SECRET(?:_KEY)?|PASSWORD|TOKEN|PRIVATE_KEY|MASTER_KEY)
+        # Compose conditional + operators for optional variables. Match an
+        # optional nested ${VAR} expression before expanding inner tokens.
+        optional_condition = re.compile(
+            r'\$\{[A-Za-z_][A-Za-z0-9_]*(?::\+|\+)(?:[^{}]|\$\{[^{}]*\})*\}')
+        result = optional_condition.sub('', value)
+        for _ in range(16):
+            def substitute(match: re.Match) -> str:
+                name, operator, fallback = match.groups()
+                if name in generated:
+                    return generated[name]
+                # Required Compose forms ${VAR:?message} / ${VAR?message}:
+                # generate only credentials, never guess an existing host path.
+                if operator in (':?', '?'):
+                    if local_secret_name(name):
+                        generated[name] = _im_generate_local_secret(name, doc)
+                        return generated[name]
+                    unresolved.add(name)
+                    return match.group(0)
+                # Empty defaults mean optional/unconfigured. Don't enable optional
+                # authentication/tunnel/OIDC credentials with invented secrets.
+                if operator is not None and fallback == '':
+                    defaults.add(name)
+                    return ''
+                if local_secret_name(name) and name != 'ACCESS_TOKEN_URL':
+                    generated[name] = _im_generate_local_secret(name, doc)
+                    return generated[name]
+                if operator is not None:
+                    defaults.add(name)
+                    return fallback or ''
+                unresolved.add(name)
+                return match.group(0)
+
+            nxt = token.sub(substitute, result)
+            if nxt == result:
+                break
+            result = nxt
+        return result
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return expand(value)
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        if isinstance(value, dict):
+            return {key: walk(item) for key, item in value.items()}
+        return value
+
+    # Do not mutate the descriptive CasaOS metadata. The x-casaos.port_map is
+    # runtime-relevant and must be resolved before installation.
+    for key in ('services', 'networks', 'volumes', 'secrets', 'configs', 'name'):
+        if key in doc:
+            doc[key] = walk(doc[key])
+    casa = doc.get('x-casaos')
+    if isinstance(casa, dict):
+        for field in ('port_map', 'hostname', 'scheme', 'index', 'icon'):
+            if field in casa:
+                casa[field] = walk(casa[field])
+
+    notes = []
+    if generated:
+        notes.append('Zufällig erzeugte Zugangswerte: ' + ', '.join(sorted(generated)) + '. Vor Installation prüfen und sicher aufbewahren.')
+    if defaults:
+        notes.append('Compose-Standardwerte eingesetzt für: ' + ', '.join(sorted(defaults)) + '.')
+    unresolved = _unresolved_runtime_variables(doc)
+    if unresolved:
+        notes.append('Diese Variablen brauchen konkrete Werte: ' + ', '.join(sorted(unresolved)) + '.')
+    return yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, default_flow_style=False), notes
+
+, name))
+        return standard or (healthlog_image and name == 'API_TOKEN_HMAC_KEY')
+
     def expand(value: str) -> str:
         # Compose conditional + operators for optional variables. Match an
         # optional nested ${VAR} expression before expanding inner tokens.
@@ -3736,7 +3891,7 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
                 # Required Compose forms ${VAR:?message} / ${VAR?message}:
                 # generate only credentials, never guess an existing host path.
                 if operator in (':?', '?'):
-                    if re.search(r'(?:SECRET(?:_KEY)?|PASSWORD|TOKEN|PRIVATE_KEY|MASTER_KEY)$', name):
+                    if local_secret_name(name):
                         generated[name] = _im_generate_local_secret(name, doc)
                         return generated[name]
                     unresolved.add(name)
@@ -3746,7 +3901,7 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
                 if operator is not None and fallback == '':
                     defaults.add(name)
                     return ''
-                if re.search(r'(?:SECRET(?:_KEY)?|PASSWORD|TOKEN|PRIVATE_KEY|MASTER_KEY)$', name) and name != 'ACCESS_TOKEN_URL':
+                if local_secret_name(name) and name != 'ACCESS_TOKEN_URL':
                     generated[name] = _im_generate_local_secret(name, doc)
                     return generated[name]
                 if operator is not None:
