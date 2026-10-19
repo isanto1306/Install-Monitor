@@ -1205,7 +1205,7 @@ def _internal_zimaos_target(entered_host: str = "") -> str:
     if not configured:
         raise HTTPException(
             400,
-            'Bitte die interne ZimaOS-Adresse eintragen (z. B. http://192.168.1.50). '
+            'Bitte die interne ZimaOS-Adresse eintragen (z. B. http://NAS-LAN-IP). '
             'Die Install-Monitor-Reverse-Proxy-Domain ist nicht die ZimaOS-Adresse.'
         )
     parsed = urllib.parse.urlsplit(_normalized_zima_host(configured))
