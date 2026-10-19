@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.11"
+VERSION = "0.2.56-beta.12"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -1319,7 +1319,7 @@ def _public_remote(url: str) -> str:
     if p.port not in (None, 443):
         raise HTTPException(400, "Quell-URLs dürfen keinen anderen Port verwenden.")
     # limit remote YAML sources to known code hosts; no SSRF against the NAS or LAN.
-    allowed = {"github.com", "raw.githubusercontent.com", "api.github.com", "gitlab.com", "codeberg.org", "raw.codeberg.page", "gist.githubusercontent.com"}
+    allowed = {"github.com", "raw.githubusercontent.com", "api.github.com", "gitlab.com", "codeberg.org", "raw.codeberg.page", "gist.githubusercontent.com", "gitea.baerentsen.space"}
     if p.hostname.lower() not in allowed:
         raise HTTPException(400, "Quelle nicht freigegeben. Bitte den YAML-Inhalt direkt einfügen.")
     try:
@@ -1972,6 +1972,10 @@ def _project_info(original: str, resolved: str, data: dict) -> tuple[str, str, l
         sections = resolved_parts.path.strip("/").split("/")
         if len(sections) >= 3:
             owner, repo = sections[:2]
+    if original_parts.hostname in _GITEA_PUBLIC_HOSTS:
+        pieces = original_parts.path.strip('/').split('/')
+        if len(pieces) >= 2 and all(GITHUB_PART.fullmatch(x) for x in pieces[:2]):
+            return f"https://{original_parts.hostname}/{pieces[0]}/{pieces[1]}", meta_icon, []
     if original_parts.hostname == 'codeberg.org':
         pieces = original_parts.path.strip('/').split('/')
         if len(pieces) >= 2 and all(GITHUB_PART.fullmatch(part) for part in pieces[:2]):
@@ -4066,6 +4070,72 @@ def _discover_codeberg_project(owner: str, repo: str) -> tuple[str, str, list[st
 
 
 
+
+_GITEA_PUBLIC_HOSTS = frozenset({'gitea.baerentsen.space'})
+
+
+def _discover_gitea_publisher(host: str, owner: str, repo: str) -> tuple[str, str, list[str]]:
+    """Read a publisher-maintained, image-backed Gitea Compose document."""
+    if host not in _GITEA_PUBLIC_HOSTS or not all(GITHUB_PART.fullmatch(x) for x in (owner, repo)):
+        raise HTTPException(400, 'Unzulässiger Gitea-Projektlink.')
+    base = 'https://' + host + '/' + owner + '/' + repo
+    branches = []
+    try:
+        info = json.loads(_download_remote('https://' + host + '/api/v1/repos/' + owner + '/' + repo, max_bytes=160000))
+        branch = info.get('default_branch') if isinstance(info, dict) else None
+        if isinstance(branch, str) and GITHUB_PART.fullmatch(branch):
+            branches.append(branch)
+    except (HTTPException, ValueError, TypeError):
+        pass
+    for fallback in ('master', 'main'):
+        if fallback not in branches:
+            branches.append(fallback)
+    for branch in branches:
+        if (owner.lower(), repo.lower()) == ('frederikbaerentsen', 'comicopds'):
+            documentation = base + '/raw/branch/' + branch + '/docs/quickstart.md'
+            try:
+                markdown = _download_remote(documentation, max_bytes=140000)
+            except HTTPException:
+                markdown = ''
+            for block in list(_DOC_FENCE.finditer(markdown))[:30]:
+                lang, source = block.group(1).strip().lower(), block.group(2).strip()
+                if lang not in ('yaml', 'yml', 'compose', 'docker-compose', ''):
+                    continue
+                try:
+                    doc = safe_yaml(source)
+                except (HTTPException, ValueError, yaml.YAMLError):
+                    continue
+                publisher_image = 'gitea.baerentsen.space/frederikbaerentsen/comicopds'
+                matching = [svc for svc in doc['services'].values()
+                            if isinstance(svc, dict)
+                            and str(svc.get('image', '')).lower().split('@')[0].split(':')[0] == publisher_image
+                            and not svc.get('build')]
+                if len(matching) != 1 or any('build' in svc for svc in doc['services'].values()):
+                    continue
+                # Never silently use the example IP 192.168.10.10 from the README.
+                matching[0].setdefault('environment', {})['SERVER_BASE'] = chr(36) + '{COMICOPDS_SERVER_BASE}'
+                doc['name'] = 'comicopds'
+                doc[_DOC_IMAGE_PREFLIGHT] = True
+                return yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), documentation, [
+                    'Gitea: offizielles Compose-Beispiel in docs/quickstart.md gefunden; fertiges Hersteller-Image bevorzugt.',
+                    'COMICOPDS_SERVER_BASE muss die tatsächliche NAS-Adresse enthalten, zum Beispiel http://NAS-LAN-IP:8382.',
+                    'Comic-Laufwerk auswählen. Für den Internetzugriff einen Anmeldeschutz einrichten.',
+                ]
+        # Other projects on the approved public host can supply an image-only Compose.
+        for name in ('compose.yaml', 'compose.yml', 'docker-compose.yml', 'docker-compose.yaml'):
+            url = base + '/raw/branch/' + branch + '/' + name
+            try:
+                source = _download_remote(url)
+                validated, _ = _resolve_compose_variables(source)
+                doc = safe_yaml(validated)
+            except (HTTPException, ValueError, yaml.YAMLError):
+                continue
+            if any('build' in svc for svc in doc['services'].values()):
+                raise HTTPException(422, 'Gitea-Compose benötigt einen lokalen Build ohne geprüften Build-Kontext. Bitte ein veröffentlichtes Hersteller-Image verwenden.')
+            return source, url, [f'Gitea: {name} im Branch {branch} erkannt.', 'Ports und NAS-Pfade vor der Installation überprüfen.']
+    raise HTTPException(422, 'Kein vollständiges Hersteller-Compose-Beispiel gefunden. Bitte eine direkte Compose-YAML oder ein veröffentlichtes Docker-Image verwenden.')
+
+
 def discover_source(value: str) -> tuple[str, str, list[str]]:
     value = value.strip()
     if len(value) > 2048:
@@ -4083,6 +4153,25 @@ def discover_source(value: str) -> tuple[str, str, list[str]]:
             raw = "https://raw.githubusercontent.com/" + "/".join(urllib.parse.quote(x, safe="") for x in [parts[0], parts[1], parts[3], *parts[4:]])
             return _download_remote(raw), raw, []
         raise HTTPException(400, "Bitte einen GitHub-Repository-/Release-Link oder die direkte Compose-YAML-Datei verwenden.")
+    if p.hostname and p.hostname.lower() in _GITEA_PUBLIC_HOSTS:
+        parts = [urllib.parse.unquote(part) for part in p.path.strip('/').split('/')]
+        if len(parts) == 2:
+            return _discover_gitea_publisher(p.hostname.lower(), *parts)
+        if (len(parts) >= 6 and parts[2] in ('src', 'raw') and parts[3] in ('branch', 'tag', 'commit')):
+            owner, repo, _, kind, branch = parts[:5]
+            pathname = '/'.join(parts[5:])
+            if not (all(GITHUB_PART.fullmatch(x) for x in (owner, repo, branch))
+                    and _safe_github_index_path(pathname)
+                    and pathname.lower().endswith(('.yaml', '.yml'))):
+                raise HTTPException(400, 'Ungültiger Gitea-Compose-Dateipfad.')
+            url = 'https://' + p.hostname.lower() + '/' + owner + '/' + repo + '/raw/' + kind + '/' + branch + '/' + pathname
+            source = _download_remote(url)
+            validated, _ = _resolve_compose_variables(source)
+            doc = safe_yaml(validated)
+            if any('build' in svc for svc in doc['services'].values()):
+                raise HTTPException(422, 'Gitea-Compose enthält einen lokalen Build ohne verifizierten Build-Kontext. Bitte die Hersteller-Image-Anleitung verwenden.')
+            return source, url, []
+        raise HTTPException(400, 'Bitte Gitea-Projektlink oder direkte Compose-YAML-Adresse verwenden.')
     if p.hostname and p.hostname.lower() == 'codeberg.org':
         parts = [urllib.parse.unquote(part) for part in p.path.strip('/').split('/')]
         if len(parts) == 2:
@@ -7902,7 +7991,7 @@ def _analyze_source_payload(payload: Source):
         icon_url = upstream_icon if isinstance(upstream_icon, str) and upstream_icon.startswith("https://") else ""
     if isinstance(doc.get('name'), str) and doc['name'].strip():
         name = doc['name']
-    elif payload.kind == 'url' and project_url.startswith(('https://github.com/', 'https://codeberg.org/')):
+    elif payload.kind == 'url' and project_url.startswith(('https://github.com/', 'https://codeberg.org/', 'https://gitea.baerentsen.space/')):
         # A multi-service app often declares infrastructure (postgres, redis)
         # first. Use its repository identity instead of naming the whole app
         # after the database container.
