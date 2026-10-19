@@ -19,11 +19,11 @@ jobs:
           set -eu
           docker logout ghcr.io >/dev/null 2>&1 || true
           docker pull ghcr.io/isanto1306/install-monitor:beta
-          docker pull ghcr.io/isanto1306/install-monitor:0.2.56-beta.2
+          docker pull ghcr.io/isanto1306/install-monitor:0.2.56-beta.3
       - name: Inspect published image
         run: |
           beta=$(docker image inspect ghcr.io/isanto1306/install-monitor:beta --format '{{.Id}}')
-          release=$(docker image inspect ghcr.io/isanto1306/install-monitor:0.2.56-beta.2 --format '{{.Id}}')
+          release=$(docker image inspect ghcr.io/isanto1306/install-monitor:0.2.56-beta.3 --format '{{.Id}}')
           echo "Beta image and Beta 2 immutable tag"
           test "$beta" = "$release"
-          docker image inspect ghcr.io/isanto1306/install-monitor:0.2.56-beta.2 --format '{{index .Config.Labels "org.opencontainers.image.version"}}' | grep -Fx '0.2.56-beta.2'
+          docker image inspect ghcr.io/isanto1306/install-monitor:0.2.56-beta.3 --format '{{index .Config.Labels "org.opencontainers.image.version"}}' | grep -Fx '0.2.56-beta.3'
