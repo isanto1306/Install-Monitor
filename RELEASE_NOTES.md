@@ -1,22 +1,27 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.56 Beta 5 (19.10.2026)
+## Version 0.2.56 Beta 6 (19.10.2026)
 
 ### Behoben
-- Die ZimaOS-Verwaltungsadresse wird auf dem NAS dauerhaft in `/app/data/install-monitor-zimaos-target.json` gespeichert und beim nächsten Anmelden beziehungsweise Installieren automatisch geladen.
-- Beim Start einer neuen Installation wird die zuletzt verwendete ZimaOS-Adresse nicht mehr gelöscht.
-- Benutzername, Passwort und Authenticator-Code werden **nicht** als Teil dieser Einstellung gespeichert.
-- Bei einem eingerichteten Authenticator oder freigegebenen Reverse-Proxy-Host verlangt Install Monitor jetzt für **jede Installation** einen aktuellen sechsstelligen Authenticator-Code. Das gilt bewusst auch beim Zugriff im LAN: Nur so lässt sich eine Umgehung über die LAN-Zieladresse oder vom Proxy umgeschriebene Header ausschließen.
-- Der zusätzliche Eingabebereich für die interne ZimaOS-Adresse erscheint nur, wenn die eingetragene ZimaOS-Zieladresse tatsächlich einem erlaubten Proxy-Host entspricht.
-- Erläuterungen zur ZimaOS-Adresse und zur Proxy-Sicherung in DE, EN, FR, PT und ES aktualisiert.
+- HealthLog: Die offizielle Hersteller-Compose mit `${API_TOKEN_HMAC_KEY}` wird bei der Quellanalyse richtig aufgelöst. Das Programm erzeugt einen zufälligen lokalen HMAC-Schlüssel aus 32 Bytes (64 Hexadezimalzeichen).
+- Der Schlüssel wird innerhalb eines Compose-Entwurfs einheitlich für die Dienste übernommen, die dieselbe Variable verwenden.
+- Bereits eingetragene, konkrete HMAC-Schlüssel werden nicht ersetzt. Bei erneuter Analyse der unveränderten Original-Compose entsteht ein neuer Erstinstallationsentwurf, kein automatisches Update eines bestehenden HealthLog.
+- Keine allgemeine Freigabe zur automatischen Erzeugung fremder API-Tokens: Die Sonderbehandlung greift nur bei der veröffentlichten HealthLog-Image-Quelle `ghcr.io/mbombeck/healthlog`.
+
+### Tests
+- Regressionstests für Format und konsistente Wiederverwendung des HMAC-Schlüssels im Entwurf.
+- Regressionstest: Ein bereits aufgelöster Compose-Entwurf rotiert den HMAC-Schlüssel bei erneuter Variablenauflösung nicht.
+- Regressionstest: Bei unbekannten Drittanbieter-Images bleibt eine nicht dokumentierte API-HMAC-Variable ungeklärt.
+
+### Konfiguration beachten
+- Nach der Installation den HMAC-Schlüssel nicht ändern: Laut HealthLog-Hersteller würde dies Websitzungen und API-Tokens ungültig machen.
+- Auch `ENCRYPTION_KEY` muss dauerhaft gesichert werden. Ein Verlust kann vorhandene verschlüsselte Daten unzugänglich machen.
+- `APP_URL` und `NEXT_PUBLIC_APP_URL` müssen zur tatsächlichen Zugriffsadresse passen. Für unverschlüsselten LAN-Zugriff verlangt HealthLog außerdem `SESSION_COOKIE_SECURE=false`; hinter HTTPS korrekt absichern.
+- Eine automatische Ermittlung der endgültigen öffentlich erreichbaren HealthLog-Adresse ist nicht implementiert. Sie muss beim Einrichten geprüft werden.
 
 ### Veröffentlichung
-- Backend, Oberfläche, Docker-Compose-Vorlage, Installationsskript, Dokumentation und GHCR-Publish-Workflow auf `0.2.56-beta.5` abgeglichen.
-- Vorgesehene Image-Tags: `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.5`.
+- Backend, Oberfläche, Docker-Compose-Vorlage, Installationsskript und GitHub-Actions-Workflow auf `0.2.56-beta.6` umgestellt.
+- Vorgesehene Container-Tags: `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.6`.
+- Ein erfolgreicher GHCR-Build und ein echter ZimaOS-Installationstest sind separat zu verifizieren.
 
-### Hinweise
-- Diese Änderung schützt den Installationsvorgang. Eine vollständige Zwei-Faktor-Anmeldung am Install Monitor selbst ist damit **nicht** eingerichtet.
-- Für wirksamen Fernzugriffsschutz muss der HTTPS-Reverse-Proxy eigenständig korrekt abgesichert sein. Install Monitor darf nicht direkt ungeschützt über das Internet erreichbar sein.
-- Ein erfolgreiches GitHub-Actions-Build und ein Live-Test auf ZimaOS müssen zusätzlich bestätigt werden.
-
-**Versionsregel:** Diese Datei enthält nur die aktuelle Version. Bei jeder neuen Beta wird ihr Inhalt ersetzt; ältere Release Notes werden nicht angehängt.
+**Versionsregel:** Diese Datei enthält ausschließlich die Release Notes der aktuellen Version. Mit jeder neuen Beta werden die vorherigen Hinweise hier ersetzt.
