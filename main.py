@@ -5687,7 +5687,7 @@ _BUILD_IMG = re.compile(r'^installmonitor-local/[a-z0-9-]+:[0-9a-f]{12}$')
 
 def _relative_build_path(path: str, allow_dot: bool = True) -> str:
     if not isinstance(path, str) or len(path) > 250 or '\\' in path or path.startswith('/'):
-        raise HTTPException(400, 'Docker-Build-Pfad muss relativ zum GitHub-Repository sein.')
+        raise HTTPException(400, 'Docker-Build-Pfad muss relativ zum Quell-Repository sein.')
     components = path.split('/')
     if not path or '..' in components or any(x == '' for x in components) or any(ord(c) < 32 for c in path):
         raise HTTPException(400, 'Unsicherer oder leerer Docker-Build-Pfad.')
@@ -5796,7 +5796,7 @@ def _validated_builds(doc: dict) -> list[dict]:
         cache_from = _validated_build_cache(build.get('cache_from'), name)
         repo_context = posixpath.normpath(posixpath.join(compose_dir, context))
         if repo_context == '..' or repo_context.startswith('../'):
-            raise HTTPException(400, f'{name}: Docker-Kontext darf das GitHub-Repository nicht verlassen.')
+            raise HTTPException(400, f'{name}: Docker-Kontext darf das Quell-Repository nicht verlassen.')
         image = svc.get('image')
         if not isinstance(image, str) or not _BUILD_IMG.fullmatch(image):
             raise HTTPException(400, f'{name}: Lokaler Build benötigt das vom Install Monitor erstellte Image-Tag.')
@@ -6009,7 +6009,8 @@ def _archive_codeberg_tree(repo: str, branch: str, revision: str, destination: P
         path = destination / name
         if not path.is_file() or path.is_symlink():
             raise HTTPException(400, 'Git-LFS-Datei oder Pointer fehlt im ausgecheckten Quellcode.')
-        pointer = path.read_bytes()[:512]
+        with path.open('rb') as stream:
+            pointer = stream.read(512)
         match_size = re.search(rb'(?m)^size (\d+)$', pointer)
         if not pointer.startswith(b'version https://git-lfs.github.com/spec/v1\n') or not match_size:
             raise HTTPException(400, 'Git-LFS-Datei hat keinen gültigen Größen-Pointer.')
@@ -6023,7 +6024,9 @@ def _archive_codeberg_tree(repo: str, branch: str, revision: str, destination: P
             path = destination / name
             if not path.is_file() or path.is_symlink():
                 raise HTTPException(400, 'Git-LFS-Checkout nach dem Download unvollständig.')
-            if path.read_bytes()[:64].startswith(b'version https://git-lfs.github.com/spec/v1'):
+            with path.open('rb') as stream:
+                prefix = stream.read(64)
+            if prefix.startswith(b'version https://git-lfs.github.com/spec/v1'):
                 raise HTTPException(400, 'Git-LFS-Pointer blieb unaufgelöst. Kein Docker-Build gestartet.')
     measure()
     return destination
