@@ -1,6 +1,6 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.56 Beta 4 (19.10.2026)
+## Version 0.2.56 Beta 5 (19.10.2026)
 
 ### Behoben
 - NetAlertX: Die Host-Netzwerk-Portprüfung erkennt den offiziellen Web-Port über `PORT` und den GraphQL-Port über `GRAPHQL_PORT`.
@@ -10,7 +10,7 @@
 
 ### Veröffentlichung
 - Versionsangaben in Backend, Oberfläche, Installationsskript, Docker Compose und Dokumentation auf Beta 4 angeglichen.
-- GHCR-Publishing auf `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.4` umgestellt.
+- GHCR-Publishing auf `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.5` umgestellt.
 
 ### Hinweise
 - Bei Host-Networking können weitere, nicht dokumentierte Netzwerkports verwendet werden. Diese Prüfung deckt ausdrücklich die beiden genannten NetAlertX-Ports ab, nicht sämtliche Netzwerkaktivität.
