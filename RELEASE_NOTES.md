@@ -16,7 +16,7 @@
 - Die vorhandenen Sicherheitsprüfungen für verifizierte Commits, Git LFS, Docker-Build-Bestätigung und private Registry bleiben aktiv.
 
 ### Benutzung
-- Für Kittygram die originale Projektadresse `https://codeberg.org/irelephant/kittygram` unter **GitHub / URL** neu analysieren. Nicht die alte Compose-Datei aus dem Editor wiederverwenden: Ihr fehlt der signierte Build-Kontext aus der Quellanalyse.
+- Für Kittygram die originale Projektadresse `https://codeberg.org/irelephant/kittygram` unter **GitHub / URL** neu analysieren. Nicht die alte Compose-Datei aus dem Editor wiederverwenden: Ihr fehlt der verifizierte Build-Kontext aus der Quellanalyse.
 - Ein lokaler Build führt fremde Dockerfile-Anweisungen aus und erfordert daher die ausdrückliche Bestätigung vor der Installation.
 - Ein erfolgreiches Image-Build beziehungsweise ein ZimaOS-Live-Test wird erst nach separater Überprüfung bestätigt.
 
