@@ -7,7 +7,7 @@
 - Für die öffentliche Gitea-Instanz `gitea.baerentsen.space` werden Repository-Links und direkte Compose-YAML-Dateilinks mit sicherer HTTPS- und Netzwerkprüfung unterstützt. Andere, nicht freigegebene Gitea-Hosts werden weiterhin nicht automatisch abgerufen.
 - Install Monitor bestimmt nach Möglichkeit den Gitea-Standardbranch, mit Fallback auf `master` und `main`.
 - ComicOPDS: Der Hersteller veröffentlicht ein fertiges Image `gitea.baerentsen.space/frederikbaerentsen/comicopds:latest`. Statt der Quell-Compose mit `build: .` wird das offizielle imagebasierte Compose-Beispiel aus `docs/quickstart.md` bevorzugt. Kein unnötiger lokaler Docker-Build.
-- Der im Herstellerbeispiel verwendete Beispiel-Server `192.168.10.10` wird **nicht** als echte NAS-Adresse übernommen: `COMICOPDS_SERVER_BASE` muss vor der Installation konkret gesetzt werden.
+- Der im Herstellerbeispiel verwendete Beispiel-Server `NAS-EXAMPLE` wird **nicht** als echte NAS-Adresse übernommen: `COMICOPDS_SERVER_BASE` muss vor der Installation konkret gesetzt werden.
 - Die Image-Verfügbarkeit wird vor der Installation separat per Registry-Manifest geprüft. Comic-Verzeichnis, Speichervolumes, Port und Anmeldung müssen kontrolliert werden.
 - Das Eingabefeld weist in DE, EN, FR, PT und ES auf unterstützte Gitea-Instanzen hin.
 
