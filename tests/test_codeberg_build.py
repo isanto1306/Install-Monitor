@@ -122,6 +122,24 @@ class CodebergBuildTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertEqual(actions, ['clone', 'rev-parse'])
 
+    def test_symlink_in_source_rejected(self):
+        actions = []
+
+        def with_symlink(cmd, **kwargs):
+            result = self.mock_git(actions)(cmd, **kwargs)
+            if 'checkout' in cmd:
+                source = Path(cmd[cmd.index('-C') + 1])
+                (source / 'unsafe-link').symlink_to('/etc/passwd')
+            return result
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(im.subprocess, 'run', side_effect=with_symlink):
+                with self.assertRaises(im.HTTPException) as ctx:
+                    im._archive_codeberg_tree(self.REPO, 'main', self.REVISION,
+                                               Path(tmp) / 'source')
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertNotIn('lfs-pull', actions)
+
     def test_oversized_lfs_refused_before_download(self):
         actions = []
         with tempfile.TemporaryDirectory() as tmp:
