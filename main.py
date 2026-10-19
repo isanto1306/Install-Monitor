@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.9"
+VERSION = "0.2.56-beta.10"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -5902,7 +5902,9 @@ def _attach_github_build_context(doc: dict, project_url: str, resolved_url: str)
     path = '/'.join(pieces[3:])
     parent = posixpath.dirname(path) or '.'
     for name, svc in doc['services'].items():
-        if 'build' in svc and not svc.get('image'):
+        if 'build' in svc:
+            # A published-looking tag does not prove the image exists; build the
+            # exact publisher source whenever the Compose explicitly requests it.
             safe_tag = re.sub('[^a-z0-9-]', '-', f'{repo}-{name}'.lower()).strip('-')[:90]
             svc['image'] = f'installmonitor-local/{safe_tag}:{sha[:12]}'
     doc[_BUILD_META] = {'repository': project_url, 'revision': sha, 'compose_dir': parent}
@@ -7824,7 +7826,7 @@ def _analyze_source_payload(payload: Source):
         project_url, icon_url, icon_notes = _project_info(
             project_url if payload.kind == "image" else payload.value, resolved_url, doc)
         source_notes.extend(icon_notes)
-        if payload.kind == 'url' and any('build' in svc and not svc.get('image') for svc in doc['services'].values()):
+        if payload.kind == 'url' and any('build' in svc for svc in doc['services'].values()):
             if project_url.startswith('https://codeberg.org/'):
                 doc, build_notes = _attach_codeberg_build_context(doc, project_url, resolved_url,
                                                                  original_compose)
