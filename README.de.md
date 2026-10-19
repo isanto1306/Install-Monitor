@@ -1,4 +1,4 @@
-# Install Monitor v0.2.56 Beta 7 · öffentliche Beta (GPL v3)
+# Install Monitor v0.2.56 Beta 8 · öffentliche Beta (GPL v3)
 
 **Neuinstallationen starten auf Englisch.** Eine bereits gewählte Sprache bleibt beim Update erhalten.
 
@@ -8,6 +8,7 @@ Install Monitor unterstützt das Analysieren und Installieren von Docker-Compose
 
 - Vier App-Kataloge: iSanto1306, LinuxServer.io, selfh.st, GitHub
 - Quellanalyse, Compose-Vorschau, Ports, Pfade und Berechtigungen
+- GitHub- und Codeberg-Builds mit festem Commit, Codeberg inklusive kontrollierter Git-LFS-Dateien
 - Hardware-/GPU-Erkennung für mehrere Services
 - Administrator-Login mit Benutzername und Passwort; signierte Session
 - DE / EN / FR / PT / ES
