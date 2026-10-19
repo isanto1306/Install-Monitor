@@ -1014,33 +1014,15 @@ _PROXY_HOSTS_LOCK = threading.RLock()
 _PROXY_NAME = re.compile(r'^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$', re.I)
 
 def _proxy_hosts() -> set[str]:
-    """Effective allowlist, including persisted revocations of environment hosts.
-
-    A TOTP-verified removal must remain effective after restart even if the
-    original IM_ALLOWED_PROXY_HOSTS environment variable has not been edited.
-    """
     with _PROXY_HOSTS_LOCK:
         try:
             saved = json.loads(_PROXY_HOSTS_FILE.read_text('utf-8'))
-            if not isinstance(saved, dict):
-                saved = {}
+            names = saved.get('hosts', [])
+            if not isinstance(names, list):
+                names = []
         except (OSError, ValueError, AttributeError):
-            saved = {}
-        names = saved.get('hosts', [])
-        disabled = saved.get('disabled_hosts', [])
-        if not isinstance(names, list):
             names = []
-        if not isinstance(disabled, list):
-            disabled = []
-        allowed = _PROXY_HOSTS_ENV | {
-            name.lower() for name in names
-            if isinstance(name, str) and _PROXY_NAME.fullmatch(name)
-        }
-        revoked = {
-            name.lower() for name in disabled
-            if isinstance(name, str) and _PROXY_NAME.fullmatch(name)
-        }
-        return allowed - revoked
+        return _PROXY_HOSTS_ENV | {name.lower() for name in names if isinstance(name, str) and _PROXY_NAME.fullmatch(name)}
 
 class ProxyHostChange(BaseModel):
     host: str = Field(min_length=4, max_length=253)
@@ -1060,38 +1042,25 @@ def _change_proxy_host(req: Request, body: ProxyHostChange, remove: bool) -> dic
     with _PROXY_HOSTS_LOCK:
         try:
             obj = json.loads(_PROXY_HOSTS_FILE.read_text('utf-8'))
-            if not isinstance(obj, dict):
-                obj = {}
+            hosts = set(obj.get('hosts', [])) if isinstance(obj.get('hosts'), list) else set()
         except (OSError, ValueError, AttributeError):
-            obj = {}
-        original_hosts = obj.get('hosts', [])
-        original_disabled = obj.get('disabled_hosts', [])
-        hosts = {
-            h.lower() for h in (original_hosts if isinstance(original_hosts, list) else [])
-            if isinstance(h, str) and _PROXY_NAME.fullmatch(h)
-        }
-        disabled = {
-            h.lower() for h in (original_disabled if isinstance(original_disabled, list) else [])
-            if isinstance(h, str) and _PROXY_NAME.fullmatch(h)
-        }
+            hosts = set()
+        hosts = {h for h in hosts if isinstance(h, str) and _PROXY_NAME.fullmatch(h)}
         if remove:
-            # Revocation works even for a host originally supplied by the
-            # environment. Keep its denial in persistent data across restarts.
+            if name in _PROXY_HOSTS_ENV:
+                raise HTTPException(409, 'Host stammt aus IM_ALLOWED_PROXY_HOSTS und muss dort entfernt werden.')
             hosts.discard(name)
-            disabled.add(name)
         else:
-            if name not in _PROXY_HOSTS_ENV and len(hosts) >= 12 and name not in hosts:
+            if len(hosts) >= 12 and name not in hosts:
                 raise HTTPException(400, 'Maximal 12 zusätzliche Reverse-Proxy-Hosts.')
-            disabled.discard(name)
-            if name not in _PROXY_HOSTS_ENV:
-                hosts.add(name)
+            hosts.add(name)
         _PROXY_HOSTS_FILE.parent.mkdir(parents=True, exist_ok=True)
         import tempfile as _tempfile
         fd, tmp = _tempfile.mkstemp(prefix='.proxy-', dir=str(_PROXY_HOSTS_FILE.parent))
         try:
             os.fchmod(fd, 0o600)
             with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-                json.dump({'hosts': sorted(hosts), 'disabled_hosts': sorted(disabled)}, stream)
+                json.dump({'hosts': sorted(hosts)}, stream)
             os.replace(tmp, _PROXY_HOSTS_FILE)
         finally:
             if os.path.exists(tmp): os.unlink(tmp)
