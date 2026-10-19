@@ -117,7 +117,7 @@ class RoutingTests(unittest.TestCase):
         with patch.dict(os.environ, {"IM_INTERNAL_ZIMAOS_URL": ""}):
             with self.assertRaises(HTTPException) as cm:
                 self.ns["_install_target"](
-                    None, Payload("im.example.org", "https://im.example.org")
+                    self.request, Payload("im.example.org", "https://im.example.org")
                 )
         self.assertEqual(cm.exception.status_code, 400)
         self.assertIn("Reverse-Proxy-Domain", cm.exception.detail)
@@ -126,7 +126,7 @@ class RoutingTests(unittest.TestCase):
         with patch.dict(os.environ, {"IM_INTERNAL_ZIMAOS_URL": ""}):
             with self.assertRaises(HTTPException) as cm:
                 self.ns["_install_target"](
-                    None, Payload("im.example.org", "https://other.example.org")
+                    self.request, Payload("im.example.org", "https://other.example.org")
                 )
         self.assertEqual(cm.exception.status_code, 400)
 
