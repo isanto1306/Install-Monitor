@@ -22,7 +22,7 @@ services:
       - "8382:8080"
     environment:
       CONTENT_BASE_DIR: /library
-      SERVER_BASE: "http://192.168.10.10:8382"
+      SERVER_BASE: "http://NAS-EXAMPLE:8382"
     volumes:
       - "./comics:/library:ro"
       - "./data:/data"
