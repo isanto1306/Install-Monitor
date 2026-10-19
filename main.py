@@ -5976,6 +5976,8 @@ def _archive_codeberg_tree(repo: str, branch: str, revision: str, destination: P
     def measure() -> tuple[int, int]:
         count = total = 0
         for current, dirs, files in os.walk(destination, followlinks=False):
+            if any((Path(current) / name).is_symlink() for name in dirs):
+                raise HTTPException(400, 'Codeberg-Quellcode enthält einen symbolischen Verzeichnislink. Build aus Sicherheitsgründen abgebrochen.')
             if '.git' in dirs:
                 # Count git objects too, but do not inspect Git's internal tree.
                 gitdir = Path(current) / '.git'
@@ -5984,11 +5986,13 @@ def _archive_codeberg_tree(repo: str, branch: str, revision: str, destination: P
                     for filename in filenames:
                         path = Path(directory) / filename
                         total += path.lstat().st_size
+                        if total > 512 * 1024 * 1024:
+                            raise HTTPException(400, 'Codeberg-Git-Daten überschreiten 512 MB.')
                 dirs.remove('.git')
             for filename in files:
                 item = Path(current) / filename
                 if item.is_symlink():
-                    continue
+                    raise HTTPException(400, 'Codeberg-Quellcode enthält einen symbolischen Dateilink. Build aus Sicherheitsgründen abgebrochen.')
                 count += 1
                 total += item.lstat().st_size
                 if count > 12000 or total > 512 * 1024 * 1024:
