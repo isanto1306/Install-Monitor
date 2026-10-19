@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.4"
+VERSION = "0.2.56-beta.5"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -1132,7 +1132,7 @@ class TotpConfirm(BaseModel):
 @app.get('/api/totp/status')
 def totp_status(req: Request):
     require_auth(req)
-    return {'enabled': bool(_totp_saved()), 'proxy_hosts': sorted(_proxy_hosts())}
+    return {'enabled': bool(_totp_saved()), 'proxy_hosts': sorted(_proxy_hosts()), 'requires_install_totp': bool(_proxy_hosts())}
 
 
 @app.post('/api/totp/setup')
@@ -1182,15 +1182,11 @@ def _normalized_zima_host(value: str) -> str:
 
 
 def _proxy_guard(req: Request, payload: Install) -> None:
+    """Validate allowed public ZimaOS URLs; TOTP is checked separately for every install."""
     host = urllib.parse.urlsplit(_normalized_zima_host(payload.host))
     if host.hostname and host.hostname.lower() in _proxy_hosts():
         if host.scheme != 'https' or host.port not in (None, 443):
             raise HTTPException(400, 'Reverse Proxy erfordert HTTPS auf Port 443. Bitte https:// voranstellen oder nur den freigegebenen Hostnamen eingeben.')
-        secret = _totp_saved()
-        if not secret:
-            raise HTTPException(403, 'Authenticator zuerst in den Install-Monitor-Einstellungen einrichten.')
-        if not _verify_totp(secret, payload.totp_code, 'install:'+str(req.session.get('csrf',''))):
-            raise HTTPException(403, 'Authenticator-Code fehlt oder ist ungültig.')
 
 
 
@@ -1219,7 +1215,18 @@ def _internal_zimaos_target(entered_host: str = "") -> str:
 
 
 def _install_target(req: Request, payload: Install) -> Install:
-    """Verify second factor before mapping the public UI hostname to LAN."""
+    """Enforce TOTP on installs when public proxy access is enabled.
+
+    A reverse proxy may rewrite Host or X-Forwarded-* headers. Therefore the
+    factor cannot depend on the submitted ZimaOS address or guessed request
+    origin: doing so permits bypass by entering the NAS LAN IP.
+    """
+    if _proxy_hosts():
+        secret = _totp_saved()
+        if not secret:
+            raise HTTPException(403, 'Reverse Proxy ist freigegeben. Authenticator zuerst in den Install-Monitor-Einstellungen einrichten.')
+        if not _verify_totp(secret, payload.totp_code, 'install:'+str(req.session.get('csrf',''))):
+            raise HTTPException(403, 'Authenticator-Code fehlt oder ist ungültig.')
     submitted = urllib.parse.urlsplit(_normalized_zima_host(payload.host))
     if submitted.hostname and submitted.hostname.lower() in _proxy_hosts():
         _proxy_guard(req, payload)
@@ -1257,6 +1264,52 @@ def safe_host(host: str) -> str:
     except socket.gaierror as exc:
         raise HTTPException(400, "ZimaOS-Hostname kann nicht aufgelöst werden.") from exc
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+# Persist only the ZimaOS endpoint. Credentials and TOTP codes remain
+# per-request and are never written to disk by this configuration feature.
+_ZIMAOS_TARGET_FILE = Path(os.getenv('IM_ZIMAOS_TARGET_FILE', '/app/data/install-monitor-zimaos-target.json'))
+_ZIMAOS_TARGET_LOCK = threading.RLock()
+
+
+class ZimaOsTargetSave(BaseModel):
+    host: str = Field(min_length=1, max_length=256)
+
+
+def _saved_zimaos_host() -> str:
+    with _ZIMAOS_TARGET_LOCK:
+        try:
+            saved = json.loads(_ZIMAOS_TARGET_FILE.read_text('utf-8'))
+            value = saved.get('host', '') if isinstance(saved, dict) else ''
+            if isinstance(value, str) and 0 < len(value) <= 256:
+                return value
+        except (OSError, ValueError):
+            pass
+    return os.getenv('IM_INTERNAL_ZIMAOS_URL', '').strip()
+
+
+@app.get('/api/zimaos/target')
+def get_zimaos_target(req: Request):
+    require_auth(req)
+    return {'host': _saved_zimaos_host()}
+
+
+@app.post('/api/zimaos/target')
+def save_zimaos_target(req: Request, body: ZimaOsTargetSave):
+    require_write(req)
+    host = safe_host(body.host.strip())
+    with _ZIMAOS_TARGET_LOCK:
+        _ZIMAOS_TARGET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(prefix='.zimaos-target-', dir=str(_ZIMAOS_TARGET_FILE.parent))
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                json.dump({'host': host}, stream)
+            os.replace(name, _ZIMAOS_TARGET_FILE)
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
+    return {'host': host}
 
 
 def _public_remote(url: str) -> str:
