@@ -1,27 +1,25 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.56 Beta 10 (19.10.2026)
+## Version 0.2.56 Beta 11 (19.10.2026)
 
-### Behoben: Codeberg-Build bei `image:` und `build:`
-- Ein Docker-Compose-Dienst kann zugleich ein Image-Tag und einen lokalen Build-Kontext festlegen. Bisher übersprang Install Monitor in genau diesem Fall die Erzeugung eines überprüfbaren Build-Kontexts.
-- Die automatische Analyse erkennt jetzt jedes ausdrücklich angegebene `build:`, unabhängig davon, ob zusätzlich ein `image:` existiert.
-- Für direkt analysierte Codeberg-Projekte prüft Install Monitor den Publisher-Commit, vergleicht die geladene Compose mit der Version dieses Commits und fügt den Build-Nachweis `x-install-monitor-codeberg` hinzu.
-- Der Originalname `kittygram:latest` wird für den bestätigten lokalen Build durch ein commitgebundenes Image `installmonitor-local/kittygram-kittygram:<12-stelliger-Commit>` ersetzt.
-- Derselbe Fehler ist in der GitHub-Build-Vorbereitung behoben. Die ursprüngliche `build:`-Anweisung bleibt bis zum bestätigten lokalen Build im Entwurf enthalten; vor Übergabe an ZimaOS wird sie ordnungsgemäß entfernt.
+### Behoben: Codeberg-Commit-Prüfung
+- Nach der Quellanalyse von Projekten mit lokalem Docker-Build, beispielsweise `https://codeberg.org/irelephant/kittygram`, konnte die einzelne Forgejo-API-Abfrage `/commits/{branch}` fehlschlagen. Install Monitor brach dann mit der Meldung „Codeberg-Commit konnte nicht geprüft werden“ ab.
+- Für öffentliche Codeberg-Repositories werden zur Ermittlung des unveränderlichen Commits jetzt bis zu drei voneinander unabhängige Wege genutzt:
+  1. Forgejo-API `/commits/{branch}`.
+  2. Forgejo-API `/branches/{branch}` einschließlich der Commit-ID.
+  3. `git ls-remote --exit-code` über HTTPS für exakt `refs/heads/{branch}`, wenn die API nicht verfügbar ist.
+- Ein Ergebnis wird nur bei einer gültigen 40-stelligen Git-Commit-ID und passend zugeordnetem Branch akzeptiert.
+- Der geladene Compose-Inhalt wird weiterhin mit der Datei aus dem ermittelten Commit abgeglichen; der spätere lokale Checkout muss exakt auf diesem Commit stehen. Es wird **niemals** ein ungeprüfter Branch gebaut.
+- Wenn alle Prüfwege scheitern, weist die Fehlermeldung auf die Codeberg-API- und Git-HTTPS-Erreichbarkeit hin, statt die Ursache zu verschleiern. Kein unsicherer automatischer Build wird durchgeführt.
 
-### Regressionstests
-- Durchgängiger Offline-Test des Analyseablaufs eines Codeberg-Projekts mit **beiden** Schlüsseln `image:` und `build:`.
-- Überprüfung des lokal erzeugten Image-Namens, der unveränderten Zusatzdienste und des erforderlichen Build-Nachweises.
-- GitHub-Test für bereits vorhandene Image-Tags mit `build:`.
-- Die vorhandenen Sicherheitsprüfungen für verifizierte Commits, Git LFS, Docker-Build-Bestätigung und private Registry bleiben aktiv.
-
-### Benutzung
-- Für Kittygram die originale Projektadresse `https://codeberg.org/irelephant/kittygram` unter **GitHub / URL** neu analysieren. Nicht die alte Compose-Datei aus dem Editor wiederverwenden: Ihr fehlt der verifizierte Build-Kontext aus der Quellanalyse.
-- Ein lokaler Build führt fremde Dockerfile-Anweisungen aus und erfordert daher die ausdrückliche Bestätigung vor der Installation.
-- Ein erfolgreiches Image-Build beziehungsweise ein ZimaOS-Live-Test wird erst nach separater Überprüfung bestätigt.
+### Tests
+- Neue Offline-Regressionstests für den normalen API-Abruf, den alternativen Forgejo-Branch-Endpunkt und den Git-HTTPS-Fallback.
+- Tests für falsche Branch-Refs, komplett gescheiterte Prüfungen und Ablehnung unsicherer Branch-Namen.
+- Alle bisherigen Build-, Git-LFS- und ZimaOS-Installations-Sicherheitsprüfungen bleiben aktiv.
 
 ### Veröffentlichung
-- Backend, Frontend, Dokumentation, Installationsskript, lokale Compose-Vorlage und GitHub-Actions-Workflow auf `0.2.56-beta.10` aktualisiert.
-- Vorgesehene GHCR-Tags: `ghcr.io/isanto1306/install-monitor:beta` und `ghcr.io/isanto1306/install-monitor:0.2.56-beta.10`.
+- Backend, UI, README-Dateien, Installationsskript, Docker-Compose-Vorlage und GHCR-Workflow auf `0.2.56-beta.11` aktualisiert.
+- Ziel-Tags: `ghcr.io/isanto1306/install-monitor:0.2.56-beta.11` und `ghcr.io/isanto1306/install-monitor:beta`.
+- Der Erfolg des GitHub-Actions-Laufs und der tatsächliche Kittygram-Build auf dem NAS müssen unabhängig vom Quellcode geprüft werden.
 
-**Release-Notes-Regel:** Diese Datei enthält ausschließlich die aktuelle Beta. Bei der nächsten Version wird sie vollständig ersetzt, nicht angehängt.
+**Versionsregel:** Diese Datei enthält ausschließlich die Hinweise zur aktuellen Beta; ältere Release Notes werden bei jedem Update ersetzt.
