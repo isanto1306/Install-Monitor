@@ -7,6 +7,10 @@ on:
       - main.py
       - requirements.txt
       - Dockerfile
+      - docker-compose.yml
+      - install.sh
+      - 'tests/**'
+      - 'scripts/prepublish_check.py'
       - 'static/**'
       - '.github/workflows/publish-ghcr.yml'
   workflow_dispatch:
