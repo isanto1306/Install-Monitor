@@ -3741,7 +3741,7 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
 
     def local_secret_name(name: str) -> bool:
         standard = bool(re.search(r'(?:SECRET(?:_KEY)?|PASSWORD|TOKEN|PRIVATE_KEY|MASTER_KEY)$', name))
-        return standard or (healthlog_image and name == 'API_TOKEN_HMAC_KEY')
+        return standard or (healthlog_image and name in ('API_TOKEN_HMAC_KEY', 'ENCRYPTION_KEY'))
 
     def expand(value: str) -> str:
         # Compose conditional + operators for optional variables. Match an
