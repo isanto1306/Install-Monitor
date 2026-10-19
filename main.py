@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.8"
+VERSION = "0.2.56-beta.9"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -3903,6 +3903,72 @@ def _discover_gitlab_project(namespace: str) -> tuple[str, str, list[str]]:
 
 
 
+
+def _codeberg_readme_compose(owner: str, repo: str, branch: str) -> tuple[str, str, list[str]] | None:
+    """Use only a complete publisher-owned, image-backed Compose code fence.
+
+    README text is documentation, not a Compose file. Extract a fenced YAML
+    example without executing shell instructions or guessing Docker run flags.
+    The published image must match the exact repository owner/name and is
+    verified against the registry again before ZimaOS receives a POST.
+    """
+    allowed_images = {
+        f'codeberg.org/{owner}/{repo}'.lower(),
+        f'ghcr.io/{owner}/{repo}'.lower(),
+        f'docker.io/{owner}/{repo}'.lower(),
+        f'{owner}/{repo}'.lower(),
+    }
+    readmes = ('README.md', 'readme.md', 'README.MD',
+               'README.markdown', 'docs/docker.md', 'docs/installation.md')
+    for document_path in readmes:
+        url = ('https://codeberg.org/' +
+               '/'.join(urllib.parse.quote(piece, safe='') for piece in (owner, repo)) +
+               '/raw/branch/' + urllib.parse.quote(branch, safe='') + '/' +
+               '/'.join(urllib.parse.quote(piece, safe='') for piece in document_path.split('/')))
+        try:
+            markdown = _download_remote(url, max_bytes=200000)
+        except HTTPException:
+            continue
+        if not isinstance(markdown, str):
+            continue
+        for match in list(_DOC_FENCE.finditer(markdown))[:45]:
+            language, source = match.group(1).strip().lower(), match.group(2).strip()
+            if language not in ('yaml', 'yml', 'compose', 'docker-compose', '') or len(source) > 100000:
+                continue
+            try:
+                expanded, _ = _resolve_compose_variables(source)
+                config = safe_yaml(expanded)
+            except (HTTPException, ValueError, yaml.YAMLError):
+                continue
+            services = config['services']
+            if not all(isinstance(item.get('image'), str) and not item.get('build')
+                       for item in services.values()):
+                continue
+            # Ignore unrelated example stacks (e.g. reverse-proxy tutorials).
+            # A matching publisher image is evidence; image availability
+            # itself is checked later via Docker registry manifest inspection.
+            refs = [str(item['image']).lower() for item in services.values()]
+            identities = [ref.split('@', 1)[0].rsplit(':', 1)[0]
+                          if ':' in ref.rsplit('/', 1)[-1] else ref.split('@', 1)[0]
+                          for ref in refs]
+            if not any(value in allowed_images for value in identities):
+                continue
+            config[_DOC_IMAGE_PREFLIGHT] = True
+            notes = [
+                f'Codeberg: Keine eigenständige Compose gefunden; vollständiges Docker-Compose-Beispiel aus {document_path} (Branch {branch}) übernommen.',
+                'Das Docker-Image wird vor dem ZimaOS-Installationsauftrag über ein Registry-Manifest geprüft. '
+                'Die Quell-Dokumentation ist kein Beleg für die Verfügbarkeit eines Tags.',
+                'Speicherorte, Ports, Umgebungsvariablen und dokumentierte Voraussetzungen vor der Installation prüfen.',
+            ]
+            if re.search(r'\bno authentication or authorization\b|\bno authentication\b',
+                         markdown, re.I):
+                notes.append('Herstellerhinweis: Diese Anwendung bietet keine integrierte Authentifizierung. '
+                             'Nur für vertrauenswürdige Netze freigeben und Fernzugriff separat absichern.')
+            return yaml.safe_dump(config, allow_unicode=True, sort_keys=False), url, notes
+    return None
+
+
+
 def _discover_codeberg_project(owner: str, repo: str) -> tuple[str, str, list[str]]:
     """Find genuine Compose in a Codeberg/Forgejo project, never execute source.
 
@@ -3960,6 +4026,10 @@ def _discover_codeberg_project(owner: str, repo: str) -> tuple[str, str, list[st
         for filename in ordered:
             if attempts >= max_probes_per_branch:
                 break
+            if attempts == 4:
+                documented = _codeberg_readme_compose(owner, repo, branch)
+                if documented is not None:
+                    return documented
             if not _safe_github_index_path(filename) or _github_deploy_score(filename, repo) < 0:
                 continue
             attempts += 1
@@ -3983,8 +4053,15 @@ def _discover_codeberg_project(owner: str, repo: str) -> tuple[str, str, list[st
                     'nicht automatisch übertragen. Ohne veröffentlichtes Image und '
                     'vollständigen Build-Kontext ist die direkte ZimaOS-Installation gesperrt.')
             return source, raw, notes
+        # Fewer than four possible candidate probes, or a README check after
+        # every candidate was skipped by filename validation.
+        if attempts < 4:
+            documented = _codeberg_readme_compose(owner, repo, branch)
+            if documented is not None:
+                return documented
     raise HTTPException(
-        422, 'In diesem Codeberg-Projekt wurde keine geprüfte Compose-Datei gefunden. '
+        422, 'In diesem Codeberg-Projekt wurde weder eine gültige Compose-Datei '
+        'noch ein überprüfbares vollständiges Compose-Beispiel in der README gefunden. '
         'Bitte eine gültige direkte Compose-YAML-Adresse oder das dokumentierte Docker-Image verwenden.')
 
 
