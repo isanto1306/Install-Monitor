@@ -34,6 +34,44 @@ class CodebergBuildTests(unittest.TestCase):
             return self.YAML
         raise AssertionError('Unexpected remote: ' + url)
 
+    def test_codeberg_analysis_with_both_image_and_build(self):
+        # The publisher's actual pattern: image + build coexist. This used
+        # to skip _attach_codeberg_build_context entirely in analysis.
+        import yaml
+        original = yaml.safe_dump(self.document(), sort_keys=False)
+        def remote(url, max_bytes=524288):
+            if url.endswith('/commits/main'):
+                return '{"sha":"' + self.REVISION + '"}'
+            if url == self.REPO + '/raw/commit/' + self.REVISION + '/compose.yaml':
+                return original
+            raise AssertionError('Unexpected Codeberg fetch: ' + url)
+        with patch.object(im, 'discover_source',
+                          return_value=(original, self.BRANCH_RAW, [])), \
+             patch.object(im, '_download_remote', side_effect=remote), \
+             patch.object(im, '_project_info', return_value=(self.REPO, '', [])), \
+             patch.object(im, '_warnings', return_value=[]), \
+             patch.object(im, '_im_default_lan_web_port', return_value=[]):
+            result = im._analyze_source_payload(im.Source(kind='url', value=self.REPO))
+        doc = im.safe_yaml(result['source'])
+        self.assertEqual(doc['services']['kittygram']['image'],
+                         'installmonitor-local/kittygram-kittygram:aaaaaaaaaaaa')
+        self.assertIn('build', doc['services']['kittygram'])
+        self.assertEqual(doc['services']['redis']['image'], 'valkey/valkey:latest')
+        self.assertIn(im._CODEBERG_BUILD_META, doc)
+        self.assertEqual(im._validated_builds(doc)[0]['provider'], 'codeberg')
+        self.assertTrue(any('Codeberg-Docker-Build' in note for note in result['notes']))
+
+    def test_github_build_with_preexisting_image_has_local_provenance(self):
+        from unittest.mock import patch
+        doc = self.document()
+        github = 'https://github.com/owner/kittygram'
+        raw = 'https://raw.githubusercontent.com/owner/kittygram/main/compose.yaml'
+        with patch.object(im, '_github_json', return_value={'sha': self.REVISION}):
+            result, notes = im._attach_github_build_context(doc, github, raw)
+        self.assertEqual(result['services']['kittygram']['image'],
+                         'installmonitor-local/kittygram-kittygram:aaaaaaaaaaaa')
+        self.assertEqual(im._validated_builds(result)[0]['provider'], 'github')
+
     def test_codeberg_build_metadata_local_image_and_sanitized_compose(self):
         with patch.object(im, '_download_remote', side_effect=self.mock_remote):
             document, notes = im._attach_codeberg_build_context(
