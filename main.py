@@ -1132,7 +1132,7 @@ class TotpConfirm(BaseModel):
 @app.get('/api/totp/status')
 def totp_status(req: Request):
     require_auth(req)
-    return {'enabled': bool(_totp_saved()), 'proxy_hosts': sorted(_proxy_hosts()), 'requires_install_totp': bool(_proxy_hosts())}
+    return {'enabled': bool(_totp_saved()), 'proxy_hosts': sorted(_proxy_hosts()), 'requires_install_totp': bool(_totp_saved()) or bool(_proxy_hosts())}
 
 
 @app.post('/api/totp/setup')
@@ -1215,13 +1215,13 @@ def _internal_zimaos_target(entered_host: str = "") -> str:
 
 
 def _install_target(req: Request, payload: Install) -> Install:
-    """Enforce TOTP on installs when public proxy access is enabled.
+    """Enforce TOTP on installs once configured or when proxy access is enabled.
 
     A reverse proxy may rewrite Host or X-Forwarded-* headers. Therefore the
     factor cannot depend on the submitted ZimaOS address or guessed request
     origin: doing so permits bypass by entering the NAS LAN IP.
     """
-    if _proxy_hosts():
+    if _totp_saved() or _proxy_hosts():
         secret = _totp_saved()
         if not secret:
             raise HTTPException(403, 'Reverse Proxy ist freigegeben. Authenticator zuerst in den Install-Monitor-Einstellungen einrichten.')
