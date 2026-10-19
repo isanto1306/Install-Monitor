@@ -21,14 +21,14 @@ class ZimaOsInstallSecurityTests(unittest.TestCase):
             with (patch.object(im, "_ZIMAOS_TARGET_FILE", path),
                   patch.object(im, "require_write"),
                   patch.object(im, "require_auth"),
-                  patch.object(im, "safe_host", return_value="http://192.168.178.191")):
-                result = im.save_zimaos_target(SimpleNamespace(), im.ZimaOsTargetSave(host="192.168.178.191"))
-                self.assertEqual(result, {"host": "http://192.168.178.191"})
+                  patch.object(im, "safe_host", return_value="http://127.0.0.1")):
+                result = im.save_zimaos_target(SimpleNamespace(), im.ZimaOsTargetSave(host="127.0.0.1"))
+                self.assertEqual(result, {"host": "http://127.0.0.1"})
                 self.assertEqual(im.get_zimaos_target(SimpleNamespace()), result)
-                self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"host": "http://192.168.178.191"})
+                self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"host": "http://127.0.0.1"})
 
     def test_lan_target_does_not_bypass_enabled_totp(self):
-        payload = im.Install(compose="services: {}", host="http://192.168.178.191",
+        payload = im.Install(compose="services: {}", host="http://127.0.0.1",
                              username="admin", password="not-saved", confirmed=True)
         req = SimpleNamespace(session={"csrf": "test-session"})
         with (patch.object(im, "_totp_saved", return_value="ABCDEFGHIJKLMNOP"),
@@ -40,26 +40,26 @@ class ZimaOsInstallSecurityTests(unittest.TestCase):
             verify.assert_called_once()
 
     def test_valid_totp_works_with_private_target(self):
-        payload = im.Install(compose="services: {}", host="http://192.168.178.191",
+        payload = im.Install(compose="services: {}", host="http://127.0.0.1",
                              username="admin", password="not-saved", totp_code="123456")
         req = SimpleNamespace(session={"csrf": "test-session"})
         with (patch.object(im, "_totp_saved", return_value="ABCDEFGHIJKLMNOP"),
               patch.object(im, "_proxy_hosts", return_value={"monitor.example.org"}),
               patch.object(im, "_verify_totp", return_value=True) as verify,
-              patch.object(im, "safe_host", return_value="http://192.168.178.191")):
+              patch.object(im, "safe_host", return_value="http://127.0.0.1")):
             result = im._install_target(req, payload)
-            self.assertEqual(result.host, "http://192.168.178.191")
+            self.assertEqual(result.host, "http://127.0.0.1")
             verify.assert_called_once()
 
     def test_no_totp_needed_when_not_enabled_and_no_proxy_allowed(self):
-        payload = im.Install(compose="services: {}", host="http://192.168.178.191",
+        payload = im.Install(compose="services: {}", host="http://127.0.0.1",
                              username="admin", password="not-saved")
         req = SimpleNamespace(session={"csrf": "test-session"})
         with (patch.object(im, "_totp_saved", return_value=""),
               patch.object(im, "_proxy_hosts", return_value=set()),
               patch.object(im, "_verify_totp") as verify,
-              patch.object(im, "safe_host", return_value="http://192.168.178.191")):
-            self.assertEqual(im._install_target(req, payload).host, "http://192.168.178.191")
+              patch.object(im, "safe_host", return_value="http://127.0.0.1")):
+            self.assertEqual(im._install_target(req, payload).host, "http://127.0.0.1")
             verify.assert_not_called()
 
 
