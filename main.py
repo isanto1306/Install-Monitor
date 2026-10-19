@@ -5835,7 +5835,8 @@ def _attach_github_build_context(doc: dict, project_url: str, resolved_url: str)
 
 
 
-def _attach_codeberg_build_context(doc: dict, project_url: str, resolved_url: str) -> tuple[dict, list[str]]:
+def _attach_codeberg_build_context(doc: dict, project_url: str, resolved_url: str,
+                                   original_compose: str) -> tuple[dict, list[str]]:
     """Pin a Codeberg build to an immutable Forgejo commit before installation."""
     match = _CODEBERG_REPO.fullmatch(project_url)
     raw = urllib.parse.urlsplit(resolved_url)
@@ -5861,6 +5862,12 @@ def _attach_codeberg_build_context(doc: dict, project_url: str, resolved_url: st
     path = '/'.join(parts[5:])
     if not _safe_github_index_path(path):
         raise HTTPException(400, 'Ungültiger Codeberg-Compose-Dateipfad.')
+    pinned_url = (f'https://codeberg.org/{owner}/{repo}/raw/commit/{sha}/' +
+                  '/'.join(urllib.parse.quote(part, safe='') for part in parts[5:]))
+    pinned_compose = _download_remote(pinned_url)
+    if pinned_compose != original_compose:
+        raise HTTPException(409, 'Die Codeberg-Compose hat sich während der Analyse verändert. '
+                            'Quelle erneut analysieren; kein Build aus einem anderen Commit.')
     parent = posixpath.dirname(path) or '.'
     for name, svc in doc['services'].items():
         if 'build' in svc:
@@ -7716,6 +7723,7 @@ def _analyze_source_payload(payload: Source):
                         'Ports und Datenpfade nicht. Weitere Abhängigkeiten gegebenenfalls prüfen.')
     elif payload.kind == "url":
         content, resolved_url, source_notes = discover_source(payload.value)
+        original_compose = content
         if urllib.parse.urlsplit(payload.value).hostname == 'github.com':
             content, image_notes = _im_prefer_documented_publisher_image(content, resolved_url)
             source_notes.extend(image_notes)
@@ -7734,7 +7742,8 @@ def _analyze_source_payload(payload: Source):
         source_notes.extend(icon_notes)
         if payload.kind == 'url' and any('build' in svc and not svc.get('image') for svc in doc['services'].values()):
             if project_url.startswith('https://codeberg.org/'):
-                doc, build_notes = _attach_codeberg_build_context(doc, project_url, resolved_url)
+                doc, build_notes = _attach_codeberg_build_context(doc, project_url, resolved_url,
+                                                                 original_compose)
             else:
                 doc, build_notes = _attach_github_build_context(doc, project_url, resolved_url)
             source_notes.extend(build_notes)
