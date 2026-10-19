@@ -1,4 +1,4 @@
-# Install Monitor v0.2.56-beta.3 — self-hosted ZimaOS/Docker Compose beta.
+# Install Monitor v0.2.56-beta.4 — self-hosted ZimaOS/Docker Compose beta.
 # Local private registry binds only to 127.0.0.1; no public registry push.
 # The Docker socket gives the application extensive host control. Keep the
 # admin UI private (LAN/VPN) and use HTTPS when accessing it remotely.
@@ -6,7 +6,7 @@ name: install-monitor
 services:
   install-monitor:
     container_name: install-monitor
-    image: install-monitor:0.2.56-beta.3-local
+    image: install-monitor:0.2.56-beta.4-local
     build:
       context: .
       dockerfile: Dockerfile
@@ -64,4 +64,4 @@ x-casaos:
   developer: isanto1306
   architectures:
     - amd64
-  version: '0.2.56-beta.3'
+  version: '0.2.56-beta.4'
