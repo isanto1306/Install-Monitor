@@ -30,11 +30,13 @@ ENV_LAN_ADDRESS = "http://" + ".".join(("10", "0", "0", "42"))
 class Payload:
     host = ""
     internal_host = ""
-    def __init__(self, host, internal_host=""):
+    totp_code = "123456"
+    def __init__(self, host, internal_host="", totp_code="123456"):
         self.host = host
         self.internal_host = internal_host
+        self.totp_code = totp_code
     def model_copy(self, update):
-        return Payload(update["host"], self.internal_host)
+        return Payload(update["host"], self.internal_host, self.totp_code)
 
 
 class RoutingTests(unittest.TestCase):
@@ -50,6 +52,7 @@ class RoutingTests(unittest.TestCase):
         ast.fix_missing_locations(module)
         self.guards = []
         self.safe_calls = []
+        self.request = types.SimpleNamespace(session={"csrf": "test-session"})
 
         def safe_host(value):
             self.safe_calls.append(value)
@@ -65,6 +68,8 @@ class RoutingTests(unittest.TestCase):
             "os": os,
             "HTTPException": HTTPException,
             "_proxy_hosts": lambda: {"im.example.org"},
+            "_totp_saved": lambda: "offline-unit-test-secret",
+            "_verify_totp": lambda secret, code, scope: code == "123456",
             "_proxy_guard": lambda request, payload: self.guards.append(payload.host),
             "safe_host": safe_host,
         }
@@ -73,14 +78,22 @@ class RoutingTests(unittest.TestCase):
 
     def test_local_zimaos_address_does_not_require_proxy_or_env(self):
         with patch.dict(os.environ, {"IM_INTERNAL_ZIMAOS_URL": ""}):
-            result = self.ns["_install_target"](None, Payload(LAN_ADDRESS))
+            result = self.ns["_install_target"](self.request, Payload(LAN_ADDRESS))
         self.assertEqual(result.host, LAN_ADDRESS)
         self.assertEqual(self.guards, [])
+
+    def test_local_address_cannot_bypass_required_totp(self):
+        with self.assertRaises(HTTPException) as error:
+            self.ns["_install_target"](
+                self.request, Payload(LAN_ADDRESS, totp_code="000000")
+            )
+        self.assertEqual(error.exception.status_code, 403)
+        self.assertIn("Authenticator-Code", error.exception.detail)
 
     def test_allowlisted_reverse_proxy_routes_to_entered_private_address(self):
         with patch.dict(os.environ, {"IM_INTERNAL_ZIMAOS_URL": ""}):
             result = self.ns["_install_target"](
-                None, Payload("im.example.org", LAN_ADDRESS)
+                self.request, Payload("im.example.org", LAN_ADDRESS)
             )
             check = self.ns["_check_target"]("im.example.org", LAN_ADDRESS)
         self.assertEqual(result.host, LAN_ADDRESS)
@@ -89,13 +102,13 @@ class RoutingTests(unittest.TestCase):
 
     def test_env_fallback_is_supported_for_existing_users(self):
         with patch.dict(os.environ, {"IM_INTERNAL_ZIMAOS_URL": ENV_LAN_ADDRESS}):
-            result = self.ns["_install_target"](None, Payload("im.example.org"))
+            result = self.ns["_install_target"](self.request, Payload("im.example.org"))
         self.assertEqual(result.host, ENV_LAN_ADDRESS)
 
     def test_missing_lan_address_reports_helpful_message(self):
         with patch.dict(os.environ, {"IM_INTERNAL_ZIMAOS_URL": ""}):
             with self.assertRaises(HTTPException) as cm:
-                self.ns["_install_target"](None, Payload("im.example.org"))
+                self.ns["_install_target"](self.request, Payload("im.example.org"))
         self.assertEqual(cm.exception.status_code, 400)
         self.assertIn("interne ZimaOS-Adresse", cm.exception.detail)
         self.assertIn("NAS-LAN-IP", cm.exception.detail)
@@ -119,7 +132,7 @@ class RoutingTests(unittest.TestCase):
 
     def test_request_mapping_does_not_modify_input(self):
         payload = Payload("im.example.org", LAN_ADDRESS)
-        self.ns["_install_target"](None, payload)
+        self.ns["_install_target"](self.request, payload)
         self.assertEqual(payload.host, "im.example.org")
         self.assertEqual(payload.internal_host, LAN_ADDRESS)
 
