@@ -38,8 +38,8 @@ Other text.
         if url.endswith('/api/v1/repos/danb/rss'):
             return '{"default_branch":"main"}'
         if '/git/trees/' in url:
-            return '{"tree":[{"type":"blob","path":"README.md"},'
-                   '{"type":"blob","path":"Dockerfile"}]}'
+            return ('{"tree":[{"type":"blob","path":"README.md"},'
+                    '{"type":"blob","path":"Dockerfile"}]}')
         if url.endswith('/raw/branch/main/README.md'):
             return self.README
         raise im.HTTPException(404, 'No separate Compose in repository')
