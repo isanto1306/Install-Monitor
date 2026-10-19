@@ -18,7 +18,7 @@ Third public beta — ZimaOS target address and reverse proxy installation fix.
 - No existing Compose application is overwritten by Install Monitor.
 
 ## Test guidance
-1. Open the installation wizard, then enter the local ZimaOS address (e.g. `http://192.168.1.50`) and the normal ZimaOS administrator credentials.
+1. Open the installation wizard, then enter the local ZimaOS address (e.g. `http://NAS-LAN-IP`) and the normal ZimaOS administrator credentials.
 2. Optionally enter an approved HTTPS ZimaOS proxy domain in the main field and the ZimaOS LAN address in the new internal-address field. Provide an authenticator code.
 3. Confirm installation progress and verify the target application's Docker containers started successfully.
 
