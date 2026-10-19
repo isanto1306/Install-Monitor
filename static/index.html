@@ -8,7 +8,7 @@
 <title>Install Monitor</title>
 <link rel="icon" type="image/png" href="/static/install-monitor-icon.png?v=0.1.51-sharp-final">
 <link rel="stylesheet" href="/static/style.css?v=0.1.51">
-<script defer src="/static/app.js?v=0.2.56-beta.4"></script>
+<script defer src="/static/app.js?v=0.2.56-beta.5"></script>
 <style>
 .im-field-row{display:flex;gap:8px;align-items:stretch}.im-field-row>input{flex:1;min-width:0}.im-field-row>button{white-space:nowrap}
 .im-settings-row{padding:11px 0;border-bottom:1px solid #293949}.im-settings-row:last-child{border-bottom:0}
@@ -790,14 +790,14 @@ body:has(#imAboutPanel:not([hidden])) .main-header::before{width:min(375px,100vw
     <section class="panel hidden" id="executePanel">
      <div class="panel-heading"><span class="panel-icon">⇧</span><div><h2 data-t="installTitle">Auf dem NAS installieren</h2><p data-t="credentialsHint">ZimaOS-Anmeldedaten werden nur für diese Anfrage verwendet und nicht gespeichert.</p></div></div>
      <div class="form-grid">
-      <div class="full-field"><label for="zimaHost" data-t="zimaHost">ZimaOS-Adresse</label><input id="zimaHost" placeholder="http://NAS-LAN-IP" autocomplete="off" spellcheck="false"><p class="field-note" data-ui="hostHelp">Hier die LAN-Adresse der ZimaOS-Verwaltung eingeben, nicht die Install-Monitor-Domain.</p></div>
+      <div class="full-field"><label for="zimaHost" data-t="zimaHost">ZimaOS-Adresse</label><input id="zimaHost" placeholder="http://NAS-LAN-IP" autocomplete="off" spellcheck="false"><p class="field-note" data-ui="hostHelp">Hier die LAN-Adresse der ZimaOS-Verwaltung eingeben. Sie wird ohne Zugangsdaten gespeichert.</p></div>
        <div class="full-field" id="internalZimaField" hidden><label for="internalZimaHost" data-ui="internalTitle">Interne ZimaOS-Adresse (bei Reverse Proxy)</label><input id="internalZimaHost" autocomplete="off" spellcheck="false" data-ui-placeholder="internalPlaceholder" placeholder="http://NAS-LAN-IP"><p class="field-note" data-ui="internalHelp">Nur wenn oben die öffentliche ZimaOS-Domain steht, hier die interne LAN-IP eingeben.</p></div>
       <div><label for="zimaUser" data-t="zimaUser">ZimaOS-Benutzer</label><input id="zimaUser" autocomplete="off"></div>
       <div><label for="zimaPassword" data-t="password">Passwort</label><input id="zimaPassword" type="password" autocomplete="new-password"></div>
      </div>
       <section id="proxyTotpBox" class="port-review" hidden>
        <strong data-ui="proxyTitle">Authenticator – Reverse Proxy</strong>
-       <p class="field-note" id="proxyTotpHelp" data-ui="proxyHelp">Vor jeder Installation über HTTPS-Reverse-Proxy einen aktuellen sechsstelligen Code eingeben.</p>
+       <p class="field-note" id="proxyTotpHelp" data-ui="proxyHelp">Bei freigegebenem Reverse Proxy vor jeder Installation einen sechsstelligen Authenticator-Code eingeben.</p>
        <label for="installTotpCode" data-ui="proxyCode">Authenticator-Code</label>
        <input id="installTotpCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000">
       </section>
@@ -821,7 +821,7 @@ body:has(#imAboutPanel:not([hidden])) .main-header::before{width:min(375px,100vw
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutCpu">CPU-Auslastung</span><strong id="imAboutCpu" class="im-about-value">–</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutMemory">Arbeitsspeicher</span><strong id="imAboutMemory" class="im-about-value">–</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutSince">Online seit</span><strong id="imAboutSince" class="im-about-value">–</strong></div>
-    <div class="im-about-row"><span class="im-about-label" data-ui="aboutVersion">Version</span><strong id="imAboutVersion" class="im-about-value">v0.2.56-beta.4</strong></div>
+    <div class="im-about-row"><span class="im-about-label" data-ui="aboutVersion">Version</span><strong id="imAboutVersion" class="im-about-value">v0.2.56-beta.5</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutSupport">Unterstützt von</span><strong class="im-about-value">iSanto1306</strong></div>
     <div class="im-about-row"><span class="im-about-label" data-ui="aboutDonate">Projekt unterstützen</span><a class="im-about-paypal" href="https://paypal.me/DarioSantinho" target="_blank" rel="noopener noreferrer" aria-label="Projekt über PayPal unterstützen" title="PayPal"><span class="im-about-pay">Pay</span><span class="im-about-pal">Pal</span></a></div>
   </div>
@@ -870,7 +870,7 @@ body:has(#imAboutPanel:not([hidden])) .main-header::before{width:min(375px,100vw
  </section>
  <section class="port-review" id="proxyHostsSettings">
   <strong data-ui="proxyHostsHeading">Reverse-Proxy-Hosts verwalten</strong>
-  <p class="field-note" data-ui="proxyHostsHelp">Nur HTTPS-Ziele mit gültigem Zertifikat. Die Adresse muss die ZimaOS-API bereitstellen, nicht nur die Install-Monitor-Webseite. Änderungen erfordern Authenticator.</p>
+  <p class="field-note" data-ui="proxyHostsHelp">Nur HTTPS-Ziele mit gültigem Zertifikat. Hier die öffentliche Install-Monitor-Domain eintragen. Jede Installation verlangt dann den Authenticator-Code. Änderungen erfordern Authenticator.</p>
   <div id="proxyHostList" class="field-note" aria-live="polite"></div>
   <label for="proxyHostName" data-ui="proxyHostname">Neuen Hostnamen eintragen</label>
   <input id="proxyHostName" placeholder="zima.example.org" autocomplete="off" spellcheck="false">
@@ -878,7 +878,7 @@ body:has(#imAboutPanel:not([hidden])) .main-header::before{width:min(375px,100vw
   <input id="proxyHostCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
   <div class="actions"><button type="button" class="secondary" id="proxyHostAdd" data-ui="proxyAdd">Host hinzufügen</button></div>
  </section>
- <p class="subtle">Install Monitor v0.2.56-beta.4</p>
+ <p class="subtle">Install Monitor v0.2.56-beta.5</p>
  <button class="secondary" id="logoutBtn" data-t="logout">Abmelden</button>
 </dialog>
 <dialog id="folderDialog" class="im-folder-dialog" aria-labelledby="folderDialogHeading">
