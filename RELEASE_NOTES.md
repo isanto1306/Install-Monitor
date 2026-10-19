@@ -6,7 +6,7 @@
 - Die ZimaOS-Verwaltungsadresse wird auf dem NAS dauerhaft in `/app/data/install-monitor-zimaos-target.json` gespeichert und beim nächsten Anmelden beziehungsweise Installieren automatisch geladen.
 - Beim Start einer neuen Installation wird die zuletzt verwendete ZimaOS-Adresse nicht mehr gelöscht.
 - Benutzername, Passwort und Authenticator-Code werden **nicht** als Teil dieser Einstellung gespeichert.
-- Bei einem freigegebenen Reverse-Proxy-Host verlangt Install Monitor jetzt für **jede Installation** einen aktuellen sechsstelligen Authenticator-Code. Das gilt bewusst auch beim Zugriff im LAN: Nur so lässt sich eine Umgehung über die LAN-Zieladresse oder vom Proxy umgeschriebene Header ausschließen.
+- Bei einem eingerichteten Authenticator oder freigegebenen Reverse-Proxy-Host verlangt Install Monitor jetzt für **jede Installation** einen aktuellen sechsstelligen Authenticator-Code. Das gilt bewusst auch beim Zugriff im LAN: Nur so lässt sich eine Umgehung über die LAN-Zieladresse oder vom Proxy umgeschriebene Header ausschließen.
 - Der zusätzliche Eingabebereich für die interne ZimaOS-Adresse erscheint nur, wenn die eingetragene ZimaOS-Zieladresse tatsächlich einem erlaubten Proxy-Host entspricht.
 - Erläuterungen zur ZimaOS-Adresse und zur Proxy-Sicherung in DE, EN, FR, PT und ES aktualisiert.
 
