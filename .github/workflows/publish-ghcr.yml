@@ -10,6 +10,7 @@ on:
       - docker-compose.yml
       - install.sh
       - 'tests/**'
+      - RELEASE_NOTES.md
       - 'scripts/prepublish_check.py'
       - 'static/**'
       - '.github/workflows/publish-ghcr.yml'
