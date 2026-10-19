@@ -29,6 +29,12 @@ jobs:
         run: |
           python3 -m py_compile main.py setup_credentials.py
           node --check static/app.js
+      - name: Install test dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Run offline regression tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Check publication source
+        run: python3 scripts/prepublish_check.py
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Log in to GitHub Container Registry
