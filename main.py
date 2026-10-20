@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.57-beta.14"
+VERSION = "0.2.58-beta.15"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -2473,6 +2473,24 @@ def _github_repository_files(base: str, branch: str, repository_size: int) -> tu
     return files, incomplete
 
 
+def _im_official_zimaos_path(path: str, repo: str) -> bool:
+    """Publisher-hosted native recipe, not a generic root development stack.
+
+    An application-specific folder prevents unrelated nested deployment
+    examples from outranking the actual publisher application.
+    """
+    parts = path.lower().split('/')
+    app = repo.lower().replace('_', '-')
+    folders = [part.replace('_', '-') for part in parts[:-1]]
+    return (
+        (parts[-1] in ('compose.yml', 'compose.yaml', 'docker-compose.yml', 'docker-compose.yaml'))
+        and len(parts) >= 3
+        and ('zimaos' in folders or 'casaos' in folders)
+        and (app in folders or (folders[-1] in ('zimaos', 'casaos')
+                                 and app in parts[-1].replace('_', '-')))
+    )
+
+
 def _github_deploy_score(path: str, repo: str) -> int:
     """Rank YAML for a bounded read-and-parse probe, including generic names.
 
@@ -2496,6 +2514,8 @@ def _github_deploy_score(path: str, repo: str) -> int:
         # variant is evidenced. This only changes ranking, not installation.
         depth_penalty = min(path.count('/') * 25, 125)
         priority = legacy + 150 - depth_penalty
+        if _im_official_zimaos_path(path, repo):
+            priority += 400  # Explicit vendor ZimaOS bundle precedes root Compose.
         # The publisher may document a pre-built release stack next to the
         # source/developer Compose. Read image-tag variants early so a large
         # repository scan does not exhaust its deadline on a build-only root.
@@ -3543,6 +3563,9 @@ def _discover_github_repository(parts: list[str]) -> tuple[str, str, list[str]]:
                     or score >= 30):
                 continue
         publisher_match = _im_repo_matches_compose(doc, repo)
+        if _im_official_zimaos_path(path, repo) and not publisher_match:
+            # A matching path is not proof of a matching app image.
+            continue
         example_path = any(part in _GITHUB_EXAMPLE_DIRS for part in path.lower().split('/')[:-1])
         # Documentation examples may be different apps bundled in this repo.
         # Keep their availability visible, but do not pick such a sidecar in
@@ -3588,7 +3611,9 @@ def _discover_github_repository(parts: list[str]) -> tuple[str, str, list[str]]:
         selected = chosen
         if selected:
             _, selected_path, _, selected_content = selected
-            if selected_path == path and path.count('/') == 0 and score >= 310:
+            if (selected_path == path and path.count('/') == 0 and score >= 310
+                    and not any(_im_official_zimaos_path(remaining, repo)
+                                for _, remaining in candidates[candidate_number:])):
                 if (all(isinstance(svc, dict) and bool(svc.get('image')) and not svc.get('build')
                         for svc in doc['services'].values())
                     and not _im_compose_external_file_issues(doc)):
@@ -5410,6 +5435,47 @@ def _im_wordpress_ini_templates(doc: dict, app_name: str) -> dict[str, str]:
     return approved
 
 
+def _im_resolve_zimaos_appid_binds(doc: dict, base: str) -> list[str]:
+    """Resolve only the vendor's literal ZimaOS $AppID bind placeholder.
+
+    Never interpolate shell commands, environment secrets or arbitrary host
+    paths. A custom app-data root is authoritative for this installation.
+    """
+    prefix = '/DATA/AppData/$AppID'
+    prefix_braced = '/DATA/AppData/${AppID}'
+    changed: list[str] = []
+    for service_name, service in doc['services'].items():
+        volumes = service.get('volumes') or []
+        for index, mount in enumerate(volumes):
+            if isinstance(mount, str):
+                original, separator, target = mount.partition(':')
+                if not separator:
+                    continue
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                original = mount.get('source')
+            else:
+                continue
+            if not isinstance(original, str):
+                continue
+            matched = next((mark for mark in (prefix, prefix_braced)
+                            if original == mark or original.startswith(mark + '/')), None)
+            if not matched:
+                continue
+            suffix = original[len(matched):]
+            if any(part in ('.', '..', '') for part in suffix.split('/')[1:]):
+                raise HTTPException(400, f'{service_name}: Ungültiger ZimaOS-AppID-Pfad.')
+            destination = base.rstrip('/') + suffix
+            if len(destination) > 500:
+                raise HTTPException(400, f'{service_name}: ZimaOS-AppData-Pfad zu lang.')
+            if isinstance(mount, str):
+                volumes[index] = destination + ':' + target
+            else:
+                mount['source'] = destination
+            changed.append(service_name)
+    return ([f'Offizielle ZimaOS-AppID-Pfade im gewählten AppData-Ordner aufgelöst: '
+             + ', '.join(sorted(set(changed))) + '.'] if changed else [])
+
+
 def _convert_volumes(data: dict, name: str, base: str) -> None:
     """Make ZimaOS Compose preserve upstream Docker storage semantics.
 
@@ -5562,6 +5628,38 @@ def _im_published_host_ports(service: dict) -> set[str]:
             if len(fields) >= 2 and fields[-2].isdigit():
                 ports.add(str(int(fields[-2])))
     return ports
+
+
+def _im_external_network_issues(doc: dict) -> list[str]:
+    """Never POST an app whose declared external Docker networks do not exist.
+
+    The 'external' contract explicitly means lifecycle is managed outside this
+    Compose project. Creating a shared proxy network under the same name could
+    incorrectly expose other apps; never silently create it.
+    """
+    networks = doc.get('networks') or {}
+    if not isinstance(networks, dict):
+        return ['Docker-networks muss eine Zuordnung sein.']
+    issues: list[str] = []
+    for key, config in networks.items():
+        if not isinstance(config, dict) or not config.get('external'):
+            continue
+        name = config.get('name') or key
+        if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', name):
+            issues.append(f'Docker-Netzwerk {str(key)[:70]}: Ungültiger externer Netzwerkname.')
+            continue
+        try:
+            result = subprocess.run(
+                ['docker', 'network', 'inspect', name, '--format', '{{.Name}}'],
+                capture_output=True, text=True, timeout=8, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            issues.append(f'Docker-Netzwerk {name}: Status am NAS nicht prüfbar. Installation gesperrt.')
+            continue
+        if result.returncode != 0 or result.stdout.strip() != name:
+            issues.append(f'Docker-Netzwerk {name} fehlt auf dem NAS (external: true). '
+                          'Hersteller-Compose ohne externe Netzwerke wählen oder '
+                          'ein ausdrücklich benötigtes bestehendes Netzwerk bereitstellen.')
+    return issues
 
 
 def _im_zimaos_contract_checks(doc: dict) -> tuple[list[str], list[str]]:
@@ -6783,6 +6881,7 @@ def build_plan(p: Plan) -> dict:
     root = (p.data_dir.strip().rstrip("/") or f"/DATA/AppData/{name}")
     if not root.startswith(("/DATA/", "/media/")) or ".." in root.split("/") or not re.fullmatch(r"/[a-zA-Z0-9_./ -]{1,499}", root):
         raise HTTPException(400, "Der Datenordner muss unter /DATA/ oder /media/ liegen.")
+    preparation_notes.extend(_im_resolve_zimaos_appid_binds(data, root))
     # Silo's shipped default /opt/silo is a host storage path. The user has
     # explicitly selected the app-data base in this wizard; keep the upstream
     # per-service directory layout under that base, not in the host OS root.
@@ -6909,6 +7008,8 @@ def build_plan(p: Plan) -> dict:
     for issue in contract_errors:
         if issue not in activation_errors:
             activation_errors.append(issue)
+    activation_errors.extend(issue for issue in _im_external_network_issues(data)
+                             if issue not in activation_errors)
     report = require_ports_free(data)
     notes = preparation_notes + _warnings(data) + contract_warnings
     if data.get(_DOC_IMAGE_PREFLIGHT) is True:
@@ -8648,7 +8749,10 @@ def install(req: Request, payload: Install):
         raise HTTPException(400, 'Compose enthält offene Laufzeitvariablen: ' + ', '.join(sorted(unresolved)))
     if any('build' in svc for svc in doc['services'].values()):
         raise HTTPException(400, 'GitHub-Quellcode benötigt den Live-Installationsablauf mit Build-Bestätigung.')
-    missing = _setup_issues(doc) + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc) + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc) + _project_image_issues(doc, name)
+    missing = (_setup_issues(doc) + _im_external_network_issues(doc)
+               + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc)
+               + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc)
+               + _project_image_issues(doc, name))
     missing += [f'{service}: {key} fehlt' for service, key in _required_credentials(doc)]
     if missing:
         raise HTTPException(400, 'Installationsvoraussetzungen fehlen: ' + ' · '.join(missing))
@@ -8872,7 +8976,22 @@ def _check_runtime(services: dict, main_service: str, observed: list[dict]) -> t
     """A green result requires every non-deferred service to run, not an HTTP 200."""
     by_service = {item['service']: item for item in observed}
     deferred = {name for name, svc in services.items() if _service_setup_later(svc)}
-    required = [name for name in services if name not in deferred]
+    # A dependency using 'service_completed_successfully' is a legitimate
+    # one-shot initializer: it should exit 0, not remain running forever.
+    init_dependencies = {
+        dep for service in services.values() if isinstance(service, dict)
+        for dep, options in ((service.get('depends_on') or {}).items()
+                            if isinstance(service.get('depends_on'), dict) else [])
+        if isinstance(options, dict) and options.get('condition') == 'service_completed_successfully'
+        and dep in services and str(services[dep].get('restart', '')).lower() in ('no', 'none')
+    }
+    for dep in sorted(init_dependencies):
+        item = by_service.get(dep)
+        if not item:
+            return False, 'Initialisierungsdienst fehlt noch: ' + dep, sorted(deferred)
+        if item['state'] != 'exited' or item['exit_code'] != 0:
+            return False, 'Initialisierungsdienst noch nicht erfolgreich abgeschlossen: ' + dep, sorted(deferred)
+    required = [name for name in services if name not in deferred and name not in init_dependencies]
     missing = [name for name in required if name not in by_service]
     stopped = [name for name in required if name in by_service and by_service[name]['state'] != 'running']
     unhealthy = [name for name in required if name in by_service and by_service[name]['health'] == 'unhealthy']
@@ -8914,7 +9033,10 @@ def _validate_install_payload(payload: Install) -> tuple[dict, str]:
         _validated_builds(doc)
         if not payload.build_confirmed:
             raise HTTPException(400, 'Lokaler Docker-Build erfordert eine separate ausdrückliche Bestätigung.')
-    issues = _setup_issues(doc) + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc) + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc) + _app_url_issues(doc) + _project_image_issues(doc, name)
+    issues = (_setup_issues(doc) + _im_external_network_issues(doc)
+              + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc)
+              + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc)
+              + _app_url_issues(doc) + _project_image_issues(doc, name))
     issues += [f'{service}: {key} fehlt' for service, key in _required_credentials(doc)]
     if issues:
         raise HTTPException(400, 'Installationsvoraussetzungen fehlen: ' + ' · '.join(issues))
@@ -9081,10 +9203,31 @@ def _job_worker(job_id: str, payload: Install) -> None:
                             events='Startfehler des Hauptdienstes. Keine Erfolgsmeldung.')
                 return
             time.sleep(2)
+        if not observed:
+            existing_images = {str(svc.get('image') or '') for svc in doc['services'].values()
+                               if isinstance(svc, dict) and svc.get('image')}
+            missing_images = []
+            for image in sorted(existing_images):
+                try:
+                    check = subprocess.run(['docker', 'image', 'inspect', image, '--format', '{{.Id}}'],
+                                           capture_output=True, text=True, timeout=5)
+                    if check.returncode != 0:
+                        missing_images.append(image)
+                except (OSError, subprocess.TimeoutExpired):
+                    missing_images.append(image + ' (nicht prüfbar)')
+            detail = ('Docker-Images fehlen: ' + ', '.join(missing_images[:8])
+                      if missing_images else 'Alle angeforderten Images lokal vorhanden.')
+            message = ('ZimaOS hat die Compose-Datei angenommen, aber innerhalb der Prüfzeit '
+                       'keine Docker-Container für das Projekt erstellt. ' + detail
+                       + ' ZimaOS-App-Management- und Docker-Daemon-Logs prüfen.')
+        else:
+            ready, summary, _ = _check_runtime(doc['services'], main_service, observed)
+            message = ('ZimaOS hat den Auftrag angenommen, aber die Laufzeitprüfung '
+                       'nicht abgeschlossen: ' + summary + '. '
+                       + _im_failure_summary(observed, doc))
         _job_update(job_id, phase='verification', state='warning',
-                    message='ZimaOS hat den Auftrag angenommen, aber nicht alle Dienste sind gesund. '
-                            + _im_failure_summary(observed, doc),
-                    events='Zeitlimit erreicht; Installation nicht als erfolgreich bestätigt.')
+                    message=message,
+                    events='Zeitlimit erreicht: ' + message)
     except HTTPException as exc:
         _job_update(job_id, state='error', message=str(exc.detail), events='Installation gestoppt: ' + str(exc.detail))
     except Exception as exc:

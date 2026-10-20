@@ -1,25 +1,25 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.57 Beta 14 (20.10.2026)
+## Version 0.2.58 Beta 15 (20.10.2026)
 
-### Automatische Compose-Vorbereitung
-- Explizite, eindeutige Herstellerwerte aus dem Compose-`environment` werden für identische Variablen an anderen Stellen übernommen, statt neue Werte zu erfinden.
-- Lokal erzeugbare Kennwörter und Secrets werden pro Variablenname einmal generiert und für abhängige Dienste konsistent wiederverwendet.
-- Bei eindeutig vorhandenem, lokalem PostgreSQL-, MySQL- oder MariaDB-Container können nicht gesetzte zugehörige Benutzernamen und Datenbanknamen konservativ ergänzt werden. Keine Remote-Datenbanken, Cloud-/API-Tokens oder unbekannten Pfade raten.
-- Externe Zugangsdaten und unbestimmbare Pflichtwerte bleiben sichtbar und müssen bestätigt werden. Fehlende externe Compose-Dateien werden nicht vorgetäuscht.
+### ZimaOS-Hersteller-Compose bevorzugen
+- Bei GitHub-Projekten werden geprüfte herstellereigene ZimaOS/CasaOS-Bundles in eindeutigen App-Ordnern bevorzugt. Ein bloßer Dateiname ist kein Herkunftsnachweis: Der Inhalt muss zum Projekt passen.
+- Für Nametag wird damit die offizielle ZimaOS-Bereitstellung in `deploy/zimaos/Nametag/docker-compose.yml` gegenüber der allgemeinen Produktions-Compose bevorzugt. Direkte Compose-Datei-URLs bleiben unverändert.
+- Ausschließlich wörtliche, vom ZimaOS-Hersteller-Template bekannte `/DATA/AppData/$AppID/...`-Bind-Mounts werden auf den ausgewählten app-spezifischen NAS-Pfad abgebildet. Andere Volumes und Shellvariablen bleiben unverändert.
 
-### Zeitzone vom NAS
-- Der Assistent bevorzugt die erkannte ZimaOS/NAS-Zeitzone anstelle eines fest vorgegebenen Orts.
-- Ohne erfolgreiche Erkennung bleibt die ursprüngliche Hersteller-Zeitzone erhalten; es wird kein fester Wert unterstellt und eine sonst installierbare Anwendung wird dadurch nicht blockiert.
-- Originalwert oder eine manuell gewählte IANA-Zeitzone sind weiterhin ausdrücklich auswählbar.
+### Externe Netzwerke vor ZimaOS-POST kontrollieren
+- Für `external: true` wird das vorhandene Docker-Netzwerk auf dem tatsächlichen NAS geprüft. Fehlt ein benötigtes Netzwerk oder ist die Prüfung nicht möglich, wird der Installationsauftrag mit einer konkreten Meldung gesperrt.
+- Externe Proxy-Netze werden aus Sicherheitsgründen nicht eigenmächtig erstellt, gelöscht oder durch scheinbar gleichnamige leere Netze ersetzt.
 
-### Verständliche Installationsdiagnose
-- Vollständigere, begrenzte OCI-/runc-/AppArmor-Startfehler erscheinen auch im Installationsprotokoll, statt nur „Docker meldet einen Startfehler“.
-- Bekannte Compose-Secrets werden bei der Ausgabe maskiert. Bestehende Host- und Sicherheitsprüfungen bleiben aktiv.
+### Initialisierungscontainer und Diagnose
+- Mit `depends_on: condition: service_completed_successfully` referenzierte Einmal-Initialisierungen (`restart: "no"`) gelten nach Exit 0 als erfolgreich. Ihre Container müssen nicht dauerhaft laufen.
+- Ohne erstellte Container wird nach Zeitlimit ausdrücklich „keine Container erstellt“ statt eines pauschalen Healthcheck-Fehlers gemeldet; fehlende Images werden namentlich aufgeführt, sofern lokal prüfbar.
+- Bestehende Port-, Credential-, Host-Rechte- und Compose-Prüfungen bleiben bestehen.
 
-### Veröffentlichung und Grenzen
-- Backend, Frontend, Compose-Vorlage, Setup-Skript und GHCR-Metadaten verwenden einheitlich `0.2.57-beta.14`.
-- Beta 13 (Docker-Hub-Unterstützung und konservatives ClamAV-Profil) bleibt Bestandteil des Builds.
-- Ein GitHub-CI-Durchlauf und ein echter ZimaOS-Installationstest sind unterschiedliche Freigabeschritte. GHCR- und Store-Status separat verifizieren.
+### Veröffentlichung
+- Backend, statische Oberfläche, Installer, lokale Compose-Vorlage und GHCR auf `0.2.58-beta.15` aktualisiert.
+- Vorgesehene Images: `ghcr.io/isanto1306/install-monitor:0.2.58-beta.15` und `:beta`.
+- Der iSanto1306 ZimaOS App Store wird erst nach erfolgreicher GHCR-Veröffentlichung synchronisiert.
+- Ein erfolgreicher CI-Lauf ersetzt keinen praktischen Nametag-/ZimaOS-Test auf dem NAS.
 
-**Versionsregel:** Die Release Notes enthalten nur die aktuelle Beta.
+**Versionsregel:** Nur Hinweise zur aktuellen Beta stehen hier.
