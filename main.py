@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.60-beta.17"
+VERSION = "0.2.61-beta.18"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -1178,6 +1178,58 @@ def slug(value: str) -> str:
     if not SLUG.fullmatch(value):
         raise HTTPException(400, "App-Name muss aus 3–44 Kleinbuchstaben, Zahlen oder Bindestrichen bestehen.")
     return value
+
+
+# Beta 18: publisher snippets may start with a named service instead of the
+# top-level Docker Compose "services:" key. Only reconstruct the missing
+# *structural wrapper* when all visible YAML nodes identify real services.
+# Do not fabricate volumes, secrets, ports, networks or service definitions.
+_IM_COMPOSE_TOP_LEVEL = frozenset({
+    'name', 'version', 'networks', 'volumes', 'configs', 'secrets', 'include',
+})
+
+
+def _im_normalize_pasted_service_fragment(content: str) -> tuple[str, list[str]]:
+    """Return a strict full Compose only for an unambiguous YAML service map.
+
+    Preserve declared top-level volume/network definitions and x-* metadata.
+    Any unknown non-service key or malformed service fails via safe_yaml as
+    before; in particular, do not guess a missing image or turn an empty
+    "services" map into something that seems installable.
+    """
+    try:
+        document = yaml.safe_load(content)
+    except yaml.YAMLError:
+        return content, []
+    if not isinstance(document, dict) or 'services' in document:
+        return content, []
+    services: dict[str, dict] = {}
+    other: dict[str, Any] = {}
+    for key, value in document.items():
+        if not isinstance(key, str):
+            return content, []
+        if key in _IM_COMPOSE_TOP_LEVEL or key.startswith('x-'):
+            other[key] = value
+        elif (re.fullmatch(r'[\w-]{1,70}', key) and isinstance(value, dict)
+              and ('image' in value or 'build' in value)):
+            services[key] = value
+        else:
+            # A partial snippet like "image: nginx" is not a Compose service.
+            # We cannot safely infer the service name or ownership.
+            return content, []
+    if not services or len(services) > 20:
+        return content, []
+    fixed = {'services': services, **other}
+    # Validate before treating it as an actionable source. This also rejects
+    # unknown/malformed Docker image references rather than guessing.
+    try:
+        safe_yaml(yaml.safe_dump(fixed, allow_unicode=True, sort_keys=False))
+    except HTTPException:
+        return content, []
+    return (yaml.safe_dump(fixed, allow_unicode=True, sort_keys=False),
+            ['Compose-Struktur automatisch ergänzt: fehlender services:-Block '
+             'für ' + ', '.join(services) + '. Ports, NAS-Speicherpfade und '
+             'Dateimounts werden weiterhin einzeln geprüft.'])
 
 
 def safe_yaml(source: str) -> dict[str, Any]:
@@ -8470,7 +8522,9 @@ def _analyze_source_payload(payload: Source):
             source_notes.extend(env_notes)
         content, var_notes = _resolve_compose_variables(content)
     elif payload.kind == "yaml":
-        content, var_notes = _resolve_compose_variables(payload.value)
+        normalized, normalization_notes = _im_normalize_pasted_service_fragment(payload.value)
+        source_notes.extend(normalization_notes)
+        content, var_notes = _resolve_compose_variables(normalized)
     else:
         raise HTTPException(400, "Unbekannte Quelle.")
     doc = safe_yaml(content)
