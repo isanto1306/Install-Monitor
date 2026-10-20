@@ -12,14 +12,15 @@
 
 ### ClamAV: geschützter Standard
 - `clamav/clamav:latest` wird als Virenscanner ohne Weboberfläche behandelt.
-- Der ClamAV-Daemon-Port `3310/TCP` wird aus automatisch vorbereiteten Host-Port-Freigaben entfernt, um keinen ungeschützten Scan-Dienst bereitzustellen.
-- Scan-Verzeichnisse und Aufträge müssen vom Nutzer ausdrücklich konfiguriert werden. Ein erkannter Image-Tag installiert **keinen** automatischen Virenscan für das gesamte NAS.
-- Bei unbekannten Einstellungen erscheint weiterhin die manuell überprüfbare Compose-Vorschau; die Image-Dokumentation ersetzt keine vollständige Betriebsanleitung.
+- Ist keine vollständige Hersteller-Compose über Docker Hub abrufbar, wird für dieses ausdrücklich dokumentierte Image eine installierbare, konservative Compose-Vorlage erstellt. Der Hersteller-Datenbankpfad `/var/lib/clamav` wird auf `/DATA/AppData/clamav/database` auf dem NAS eingebunden; eine bloße OCI-Metadaten-Vorschau mit fehlendem Datenbankpfad blockiert ClamAV dann nicht mehr.
+- Die TCP-Ports `3310` (clamd) und `7357` (Milter) werden in diesem Standard nicht am NAS veröffentlicht; `3310/TCP` wird auch aus automatisch gefundenen Compose-Portfreigaben entfernt.
+- Der erste Virendatenbank-Download kann dauern. ClamAV kann Besitzerrechte am Datenbankordner anpassen.
+- Scan-Verzeichnisse und Aufträge müssen vom Nutzer ausdrücklich konfiguriert werden. Ein laufender ClamAV-Dienst installiert **keinen** automatischen Virenscan für das gesamte NAS.
 
 ### Validierung und Sicherheit
 - Nur HTTPS-Links von `hub.docker.com`, ohne Zugangsdaten, abweichende Ports oder Query-Filter; andere Webseiten werden nicht dadurch freigegeben.
 - Der bestehende DNS-/SSRF-Schutz und die ZimaOS-Host-Portprüfung bleiben aktiv.
-- Offline-Regressionstests für Namespace-Images, offizielle Library-Images, `/tags`, ungültige bzw. ähnlich aussehende Domains, Weiterleitung zur Herstelleranalyse, OCI-Fallback und ClamAV-Portschutz ergänzt.
+- Offline-Regressionstests für Namespace-Images, offizielle Library-Images, `/tags`, ungültige bzw. ähnlich aussehende Domains, Weiterleitung zur Herstelleranalyse, OCI-Fallback, ClamAV-Datenbank-Mount und ClamAV-Portschutz ergänzt.
 
 ### Veröffentlichung
 - Backend, Oberfläche, Dokumentation, Installationsskript, lokale Docker-Compose-Vorlage und GHCR-Workflow auf `0.2.56-beta.13` angeglichen.
