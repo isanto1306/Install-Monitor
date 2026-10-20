@@ -3757,7 +3757,7 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
     # Only a bundled local database permits generating its user and DB name.
     local_database = any(
         isinstance(svc, dict) and re.match(
-            r'^(?:(?:docker\\.io|ghcr\\.io)/)?(?:library/)?(?:postgres|mysql|mariadb)(?::|@|$)',
+            r'^(?:(?:docker\.io|ghcr\.io)/)?(?:library/)?(?:postgres|mysql|mariadb)(?::|@|$)',
             str(svc.get('image') or '').lower())
         for svc in (doc.get('services') or {}).values()
     )
@@ -8691,7 +8691,7 @@ def _im_safe_runtime_error(error: str, doc: dict) -> str:
             if (re.search(r'(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|MASTER_KEY)', key, re.I)
                     and len(secret) >= 8):
                 value = value.replace(secret, '[REDACTED]')
-    value = re.sub(r'(?i)(://[^:/\\s]+:)[^@/\\s]+(@)', r'\\1[REDACTED]\\2', value)
+    value = re.sub(r'(?i)(://[^:/\s]+:)[^@/\s]+(@)', r'\1[REDACTED]\2', value)
     return value[:1400]
 
 
