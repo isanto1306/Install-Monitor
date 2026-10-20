@@ -5435,6 +5435,47 @@ def _im_wordpress_ini_templates(doc: dict, app_name: str) -> dict[str, str]:
     return approved
 
 
+def _im_resolve_zimaos_appid_binds(doc: dict, base: str) -> list[str]:
+    """Resolve only the vendor's literal ZimaOS $AppID bind placeholder.
+
+    Never interpolate shell commands, environment secrets or arbitrary host
+    paths. A custom app-data root is authoritative for this installation.
+    """
+    prefix = '/DATA/AppData/$AppID'
+    prefix_braced = '/DATA/AppData/${AppID}'
+    changed: list[str] = []
+    for service_name, service in doc['services'].items():
+        volumes = service.get('volumes') or []
+        for index, mount in enumerate(volumes):
+            if isinstance(mount, str):
+                original, separator, target = mount.partition(':')
+                if not separator:
+                    continue
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                original = mount.get('source')
+            else:
+                continue
+            if not isinstance(original, str):
+                continue
+            matched = next((mark for mark in (prefix, prefix_braced)
+                            if original == mark or original.startswith(mark + '/')), None)
+            if not matched:
+                continue
+            suffix = original[len(matched):]
+            if any(part in ('.', '..', '') for part in suffix.split('/')[1:]):
+                raise HTTPException(400, f'{service_name}: Ungültiger ZimaOS-AppID-Pfad.')
+            destination = base.rstrip('/') + suffix
+            if len(destination) > 500:
+                raise HTTPException(400, f'{service_name}: ZimaOS-AppData-Pfad zu lang.')
+            if isinstance(mount, str):
+                volumes[index] = destination + ':' + target
+            else:
+                mount['source'] = destination
+            changed.append(service_name)
+    return ([f'Offizielle ZimaOS-AppID-Pfade im gewählten AppData-Ordner aufgelöst: '
+             + ', '.join(sorted(set(changed))) + '.'] if changed else [])
+
+
 def _convert_volumes(data: dict, name: str, base: str) -> None:
     """Make ZimaOS Compose preserve upstream Docker storage semantics.
 
@@ -5587,6 +5628,38 @@ def _im_published_host_ports(service: dict) -> set[str]:
             if len(fields) >= 2 and fields[-2].isdigit():
                 ports.add(str(int(fields[-2])))
     return ports
+
+
+def _im_external_network_issues(doc: dict) -> list[str]:
+    """Never POST an app whose declared external Docker networks do not exist.
+
+    The 'external' contract explicitly means lifecycle is managed outside this
+    Compose project. Creating a shared proxy network under the same name could
+    incorrectly expose other apps; never silently create it.
+    """
+    networks = doc.get('networks') or {}
+    if not isinstance(networks, dict):
+        return ['Docker-networks muss eine Zuordnung sein.']
+    issues: list[str] = []
+    for key, config in networks.items():
+        if not isinstance(config, dict) or not config.get('external'):
+            continue
+        name = config.get('name') or key
+        if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', name):
+            issues.append(f'Docker-Netzwerk {str(key)[:70]}: Ungültiger externer Netzwerkname.')
+            continue
+        try:
+            result = subprocess.run(
+                ['docker', 'network', 'inspect', name, '--format', '{{.Name}}'],
+                capture_output=True, text=True, timeout=8, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            issues.append(f'Docker-Netzwerk {name}: Status am NAS nicht prüfbar. Installation gesperrt.')
+            continue
+        if result.returncode != 0 or result.stdout.strip() != name:
+            issues.append(f'Docker-Netzwerk {name} fehlt auf dem NAS (external: true). '
+                          'Hersteller-Compose ohne externe Netzwerke wählen oder '
+                          'ein ausdrücklich benötigtes bestehendes Netzwerk bereitstellen.')
+    return issues
 
 
 def _im_zimaos_contract_checks(doc: dict) -> tuple[list[str], list[str]]:
@@ -6808,6 +6881,7 @@ def build_plan(p: Plan) -> dict:
     root = (p.data_dir.strip().rstrip("/") or f"/DATA/AppData/{name}")
     if not root.startswith(("/DATA/", "/media/")) or ".." in root.split("/") or not re.fullmatch(r"/[a-zA-Z0-9_./ -]{1,499}", root):
         raise HTTPException(400, "Der Datenordner muss unter /DATA/ oder /media/ liegen.")
+    preparation_notes.extend(_im_resolve_zimaos_appid_binds(data, root))
     # Silo's shipped default /opt/silo is a host storage path. The user has
     # explicitly selected the app-data base in this wizard; keep the upstream
     # per-service directory layout under that base, not in the host OS root.
@@ -6934,6 +7008,8 @@ def build_plan(p: Plan) -> dict:
     for issue in contract_errors:
         if issue not in activation_errors:
             activation_errors.append(issue)
+    activation_errors.extend(issue for issue in _im_external_network_issues(data)
+                             if issue not in activation_errors)
     report = require_ports_free(data)
     notes = preparation_notes + _warnings(data) + contract_warnings
     if data.get(_DOC_IMAGE_PREFLIGHT) is True:
@@ -8939,7 +9015,10 @@ def _validate_install_payload(payload: Install) -> tuple[dict, str]:
         _validated_builds(doc)
         if not payload.build_confirmed:
             raise HTTPException(400, 'Lokaler Docker-Build erfordert eine separate ausdrückliche Bestätigung.')
-    issues = _setup_issues(doc) + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc) + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc) + _app_url_issues(doc) + _project_image_issues(doc, name)
+    issues = (_setup_issues(doc) + _im_external_network_issues(doc)
+              + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc)
+              + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc)
+              + _app_url_issues(doc) + _project_image_issues(doc, name))
     issues += [f'{service}: {key} fehlt' for service, key in _required_credentials(doc)]
     if issues:
         raise HTTPException(400, 'Installationsvoraussetzungen fehlen: ' + ' · '.join(issues))
