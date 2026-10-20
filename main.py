@@ -813,29 +813,40 @@ def _im_auto_resolve_example_mounts(doc: dict, name: str, root: str) -> list[str
 
 
 def _im_sample_mount_issues(doc: dict) -> list[str]:
-    result = []
+    # One actionable issue per original NAS source, not one repeated warning
+    # for every service sharing /path/to/media.
+    grouped: dict[str, list[tuple[str, str]]] = {}
     for svc_name, service in doc.get('services', {}).items():
-        if not isinstance(service, dict):
-            continue
-        if service.get('profiles'):
+        if not isinstance(service, dict) or service.get('profiles'):
             continue
         for entry in service.get('volumes') or []:
             if isinstance(entry, str):
                 parts = entry.split(':', 2)
-                if len(parts) < 2: continue
+                if len(parts) < 2:
+                    continue
                 source, target = parts[:2]
             elif isinstance(entry, dict) and entry.get('type') == 'bind':
                 source, target = str(entry.get('source') or ''), str(entry.get('target') or '')
             else:
                 continue
-            if not _im_example_host_path(source):
-                continue
-            kind = 'Datei' if _im_file_mount_expected(source, target) else 'Ordner'
-            invalid = 'keine echte NAS-Datei' if kind == 'Datei' else 'kein echter NAS-Ordner'
-            result.append(f'{svc_name}: Hersteller-Beispielpfad {source} ist {invalid}. '
-                          f'Unter Zugangsdaten und NAS-Freigaben eine echte Quelle unter /DATA/AppData/... für {target} auswählen. '
-                          + ('Die Konfigurationsdatei muss vorher wirklich existieren; sie wird nicht automatisch erzeugt.'
-                             if kind == 'Datei' else 'Der Zielordner kann vor der Installation angelegt werden.'))
+            if _im_example_host_path(source):
+                grouped.setdefault(source, []).append((svc_name, target))
+    result: list[str] = []
+    for source, entries in grouped.items():
+        used_by = ', '.join(sorted(set(svc for svc, _ in entries)))
+        if any(_im_file_mount_expected(source, target) for _, target in entries):
+            result.append('Hersteller-Beispieldatei ' + source + ' für ' + used_by
+                          + ' ist keine vorhandene NAS-Datei. Originaldatei '
+                          'bereitstellen und unter NAS-Freigaben einmal zuordnen.')
+        elif any(_im_placeholder_media_role(source, target) for _, target in entries):
+            result.append('Gemeinsamer Medienordner ' + source + ' für ' + used_by
+                          + ' nicht eindeutig ermittelbar. Unter Zugangsdaten '
+                          'und NAS-Freigaben einmal den vorhandenen Medienordner '
+                          'auswählen; beide Dienste verwenden dieselbe Quelle.')
+        else:
+            result.append('Hersteller-Beispielordner ' + source + ' für ' + used_by
+                          + ' ist noch nicht zugeordnet. Unter NAS-Freigaben '
+                          'den echten NAS-Pfad wählen.')
     return result[:30]
 
 
