@@ -1,25 +1,23 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.58 Beta 15 (20.10.2026)
+## Version 0.2.59 Beta 16 (20.10.2026)
 
-### ZimaOS-Hersteller-Compose bevorzugen
-- Bei GitHub-Projekten werden geprüfte herstellereigene ZimaOS/CasaOS-Bundles in eindeutigen App-Ordnern bevorzugt. Ein bloßer Dateiname ist kein Herkunftsnachweis: Der Inhalt muss zum Projekt passen.
-- Für Nametag wird damit die offizielle ZimaOS-Bereitstellung in `deploy/zimaos/Nametag/docker-compose.yml` gegenüber der allgemeinen Produktions-Compose bevorzugt. Direkte Compose-Datei-URLs bleiben unverändert.
-- Ausschließlich wörtliche, vom ZimaOS-Hersteller-Template bekannte `/DATA/AppData/$AppID/...`-Bind-Mounts werden auf den ausgewählten app-spezifischen NAS-Pfad abgebildet. Andere Volumes und Shellvariablen bleiben unverändert.
+### Docker Compose Shell-Skripte: doppelte Variablenauswertung verhindern
+- Fix für Nametag: Die offizielle ZimaOS-Compose enthält POSIX-Shell-Kommandos mit Compose-Escape-Sequenzen wie `$$secrets`, `$$DB_PASSWORD` und `$$(rand 32)`. Werden diese unterwegs zweimal als Compose-Ausdrücke interpretiert, kann z. B. das Ausgabeziel von `nametag-init` leer werden.
+- Beim tatsächlichen ZimaOS-Installationsauftrag werden ausdrücklich deklarierte `sh -c`-/`ash -c`-Array-Skripte mit `$$` vor erneuter Compose-Interpolation geschützt: Einmaliges Auflösen des Compose-Dollar-Escapes und Transport der Shell-Anweisung als POSIX-`printf`-Oktalfolge. Der Transport enthält selbst keine Dollarzeichen.
+- Es sind weder zusätzliche Binaries noch zusätzliche Host-Mounts erforderlich. Der Shell-Prozess führt weiterhin die ursprüngliche Herstellerlogik aus.
+- Die Vorschau und der Hersteller-Quellcode bleiben unverändert. Andere Befehlstypen werden nicht blind umgeschrieben. Überlange Skripte werden mit einer klaren Fehlermeldung abgelehnt.
+- Testabdeckung für Nametag-Initialisierung, Cron-Tokens, reguläre Skripte und wiederholte Compose-Verarbeitung.
 
-### Externe Netzwerke vor ZimaOS-POST kontrollieren
-- Für `external: true` wird das vorhandene Docker-Netzwerk auf dem tatsächlichen NAS geprüft. Fehlt ein benötigtes Netzwerk oder ist die Prüfung nicht möglich, wird der Installationsauftrag mit einer konkreten Meldung gesperrt.
-- Externe Proxy-Netze werden aus Sicherheitsgründen nicht eigenmächtig erstellt, gelöscht oder durch scheinbar gleichnamige leere Netze ersetzt.
-
-### Initialisierungscontainer und Diagnose
-- Mit `depends_on: condition: service_completed_successfully` referenzierte Einmal-Initialisierungen (`restart: "no"`) gelten nach Exit 0 als erfolgreich. Ihre Container müssen nicht dauerhaft laufen.
-- Ohne erstellte Container wird nach Zeitlimit ausdrücklich „keine Container erstellt“ statt eines pauschalen Healthcheck-Fehlers gemeldet; fehlende Images werden namentlich aufgeführt, sofern lokal prüfbar.
-- Bestehende Port-, Credential-, Host-Rechte- und Compose-Prüfungen bleiben bestehen.
+### Bestehende Verbesserungen bleiben erhalten
+- Offizielle herstellereigene ZimaOS-Compose bevorzugen, externe Docker-Netzwerke vor Installation prüfen und fehlende Netzwerke nicht eigenmächtig erzeugen.
+- Einmalige Initialisierungscontainer mit Exit-Code 0 als erfolgreich erkennen, fehlende Container und Images differenziert melden.
+- NAS-Zeitzone erkennen statt feste Regionen zu unterstellen; unterstützte Compose-Variablen und lokale Secrets kontrolliert auflösen.
 
 ### Veröffentlichung
-- Backend, statische Oberfläche, Installer, lokale Compose-Vorlage und GHCR auf `0.2.58-beta.15` aktualisiert.
-- Vorgesehene Images: `ghcr.io/isanto1306/install-monitor:0.2.58-beta.15` und `:beta`.
-- Der iSanto1306 ZimaOS App Store wird erst nach erfolgreicher GHCR-Veröffentlichung synchronisiert.
-- Ein erfolgreicher CI-Lauf ersetzt keinen praktischen Nametag-/ZimaOS-Test auf dem NAS.
+- Backend, Frontend, Compose-Vorlage, Installer und GHCR-Workflow verwenden `0.2.59-beta.16`.
+- Geplante Tags: `ghcr.io/isanto1306/install-monitor:0.2.59-beta.16` und `:beta`.
+- Der iSanto1306 ZimaOS App Store wird nach erfolgreicher GHCR-Veröffentlichung synchronisiert.
+- Eine GitHub-CI-Prüfung ersetzt keinen tatsächlichen Installationstest auf ZimaOS.
 
-**Versionsregel:** Nur Hinweise zur aktuellen Beta stehen hier.
+**Versionsregel:** Die Release Notes enthalten nur die aktuelle Beta.
