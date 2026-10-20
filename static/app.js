@@ -390,7 +390,7 @@ const timezoneWords={
  es:['Zona horaria','Detectar de nuevo','Conservar valor original','Automático – usar zona del NAS','Elegir manualmente','Zona horaria (IANA)','Añadir TZ a servicios sin TZ','Zona del NAS','Original','Sin TZ original','No se ha podido verificar la zona del NAS. Selecciona manualmente o conserva el original.','Los valores TZ existentes se conservan si no eliges cambiarlos.','Solo se añaden valores TZ nuevos con tu consentimiento.']
 };
 let timezoneInfo=null, timezoneTouched=false;
-function selectedTimezoneMode(){return document.querySelector('input[name="timezoneMode"]:checked')?.value||'original';}
+function selectedTimezoneMode(){return document.querySelector('input[name="timezoneMode"]:checked')?.value||'nas';}
 function setTimezoneMode(value){const el=document.querySelector('input[name="timezoneMode"][value="'+value+'"]');if(el)el.checked=true;renderTimezone();}
 function renderTimezone(){
  const w=timezoneWords[lang]||timezoneWords.de;
@@ -402,10 +402,10 @@ function renderTimezone(){
  const nasRadio=document.querySelector('input[name="timezoneMode"][value="nas"]');nasRadio.disabled=!nas;
  if(!nas&&selectedTimezoneMode()==='nas')setTimezoneMode('original');
  const mode=selectedTimezoneMode();const manual=mode==='manual';$('#timezoneManualRow').hidden=!manual;$('#timezoneAddMissing').disabled=mode==='original';
- const opts=$('#timezoneName');const current=opts.value||'Europe/Berlin';
+ const opts=$('#timezoneName');const current=opts.value||nas||'';
  if(timezoneInfo?.timezones?.length&&!opts.dataset.loaded){
   opts.replaceChildren();for(const tz of timezoneInfo.timezones){const option=document.createElement('option');option.value=tz;option.textContent=tz;opts.appendChild(option)}opts.dataset.loaded='yes';
-  opts.value=[...opts.options].some(o=>o.value===current)?current:(nas||'Europe/Berlin');
+  opts.value=[...opts.options].some(o=>o.value===current)?current:(nas||'');
  }
  $('#timezoneDetails').textContent=(!nas?w[10]+' ':'')+w[11]+' '+w[12];
 }
@@ -414,7 +414,7 @@ async function loadTimezone(reset=false){
  if(reset){timezoneTouched=false;timezoneInfo=null;$('#timezoneAddMissing').checked=false;$('#timezoneName').dataset.loaded='';}
  try{
   const response=await request('/api/timezone/inspect',{source:$('#sourceYaml').value});if(generation!==wizardGeneration)return;timezoneInfo=response;
-  if(!timezoneTouched){setTimezoneMode(Object.keys(response.original||{}).length?'original':response.host_detected?'nas':'original');}
+  if(!timezoneTouched){setTimezoneMode(response.host_detected?'nas':'original');}
  }catch(e){if(generation!==wizardGeneration)return;timezoneInfo={host_timezone:'',original:{},timezones:[]};if(!timezoneTouched)setTimezoneMode('original');$('#timezoneDetails').textContent=errorMessage(e);}
  renderTimezone();
 }
@@ -2766,8 +2766,8 @@ function resetNewInstallation(){
  hostHardware=null;$('#resourceServiceList').replaceChildren();
  $('#hardwareSummary').textContent='';
  timezoneInfo=null;timezoneTouched=false;
- $('#timezoneName').dataset.loaded='';$('#timezoneName').value='Europe/Berlin';
- $('#timezoneAddMissing').checked=false;setTimezoneMode('original');
+ $('#timezoneName').dataset.loaded='';$('#timezoneName').value='';
+ $('#timezoneAddMissing').checked=false;setTimezoneMode('nas');
  $('#previewInfo').textContent='';
  $('#readinessHeading').textContent='';$('#readinessPanel').classList.remove('blocked');
  $('#setupIssues').replaceChildren();

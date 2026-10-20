@@ -1,4 +1,4 @@
-# Install Monitor v0.2.56 Beta 13 · öffentliche Beta (GPL v3)
+# Install Monitor v0.2.57 Beta 14 · öffentliche Beta (GPL v3)
 
 **Neuinstallationen starten auf Englisch.** Eine bereits gewählte Sprache bleibt beim Update erhalten.
 
