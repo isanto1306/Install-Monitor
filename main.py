@@ -8749,7 +8749,10 @@ def install(req: Request, payload: Install):
         raise HTTPException(400, 'Compose enthält offene Laufzeitvariablen: ' + ', '.join(sorted(unresolved)))
     if any('build' in svc for svc in doc['services'].values()):
         raise HTTPException(400, 'GitHub-Quellcode benötigt den Live-Installationsablauf mit Build-Bestätigung.')
-    missing = _setup_issues(doc) + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc) + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc) + _project_image_issues(doc, name)
+    missing = (_setup_issues(doc) + _im_external_network_issues(doc)
+               + _im_host_file_mount_issues(doc) + _im_unconverted_synology_binds(doc)
+               + _im_wordpress_credentials_issues(doc) + _im_wordpress_weak_password_issues(doc)
+               + _project_image_issues(doc, name))
     missing += [f'{service}: {key} fehlt' for service, key in _required_credentials(doc)]
     if missing:
         raise HTTPException(400, 'Installationsvoraussetzungen fehlen: ' + ' · '.join(missing))
@@ -8973,7 +8976,22 @@ def _check_runtime(services: dict, main_service: str, observed: list[dict]) -> t
     """A green result requires every non-deferred service to run, not an HTTP 200."""
     by_service = {item['service']: item for item in observed}
     deferred = {name for name, svc in services.items() if _service_setup_later(svc)}
-    required = [name for name in services if name not in deferred]
+    # A dependency using 'service_completed_successfully' is a legitimate
+    # one-shot initializer: it should exit 0, not remain running forever.
+    init_dependencies = {
+        dep for service in services.values() if isinstance(service, dict)
+        for dep, options in ((service.get('depends_on') or {}).items()
+                            if isinstance(service.get('depends_on'), dict) else [])
+        if isinstance(options, dict) and options.get('condition') == 'service_completed_successfully'
+        and dep in services and str(services[dep].get('restart', '')).lower() in ('no', 'none')
+    }
+    for dep in sorted(init_dependencies):
+        item = by_service.get(dep)
+        if not item:
+            return False, 'Initialisierungsdienst fehlt noch: ' + dep, sorted(deferred)
+        if item['state'] != 'exited' or item['exit_code'] != 0:
+            return False, 'Initialisierungsdienst noch nicht erfolgreich abgeschlossen: ' + dep, sorted(deferred)
+    required = [name for name in services if name not in deferred and name not in init_dependencies]
     missing = [name for name in required if name not in by_service]
     stopped = [name for name in required if name in by_service and by_service[name]['state'] != 'running']
     unhealthy = [name for name in required if name in by_service and by_service[name]['health'] == 'unhealthy']
@@ -9185,10 +9203,31 @@ def _job_worker(job_id: str, payload: Install) -> None:
                             events='Startfehler des Hauptdienstes. Keine Erfolgsmeldung.')
                 return
             time.sleep(2)
+        if not observed:
+            existing_images = {str(svc.get('image') or '') for svc in doc['services'].values()
+                               if isinstance(svc, dict) and svc.get('image')}
+            missing_images = []
+            for image in sorted(existing_images):
+                try:
+                    check = subprocess.run(['docker', 'image', 'inspect', image, '--format', '{{.Id}}'],
+                                           capture_output=True, text=True, timeout=5)
+                    if check.returncode != 0:
+                        missing_images.append(image)
+                except (OSError, subprocess.TimeoutExpired):
+                    missing_images.append(image + ' (nicht prüfbar)')
+            detail = ('Docker-Images fehlen: ' + ', '.join(missing_images[:8])
+                      if missing_images else 'Alle angeforderten Images lokal vorhanden.')
+            message = ('ZimaOS hat die Compose-Datei angenommen, aber innerhalb der Prüfzeit '
+                       'keine Docker-Container für das Projekt erstellt. ' + detail
+                       + ' ZimaOS-App-Management- und Docker-Daemon-Logs prüfen.')
+        else:
+            ready, summary, _ = _check_runtime(doc['services'], main_service, observed)
+            message = ('ZimaOS hat den Auftrag angenommen, aber die Laufzeitprüfung '
+                       'nicht abgeschlossen: ' + summary + '. '
+                       + _im_failure_summary(observed, doc))
         _job_update(job_id, phase='verification', state='warning',
-                    message='ZimaOS hat den Auftrag angenommen, aber nicht alle Dienste sind gesund. '
-                            + _im_failure_summary(observed, doc),
-                    events='Zeitlimit erreicht; Installation nicht als erfolgreich bestätigt.')
+                    message=message,
+                    events='Zeitlimit erreicht: ' + message)
     except HTTPException as exc:
         _job_update(job_id, state='error', message=str(exc.detail), events='Installation gestoppt: ' + str(exc.detail))
     except Exception as exc:
