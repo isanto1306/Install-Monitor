@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.58-beta.15"
+VERSION = "0.2.59-beta.16"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -6517,6 +6517,46 @@ def _build_local_images(doc: dict, job_id: str) -> None:
             _job_update(job_id, events=f"{spec['service']}: Docker-Image {spec['image']} erfolgreich erstellt.")
 
 
+def _im_protect_shell_command_for_zimaos(service_name: str, service: dict) -> bool:
+    """Preserve POSIX shell scripts through repeated ZimaOS Compose parsing.
+
+    A publisher's $$var is correct for one Compose pass. Repeated parsing can
+    erase $var, leaving an empty filename as seen in Nametag. For explicit
+    POSIX sh -c array commands, encode the intended single-pass script as
+    octal bytes. The transport stub has no dollar signs; it requires only
+    the POSIX shell builtins printf and eval, no external binary or file.
+
+    Unrelated command forms and commands without Compose dollar escapes
+    remain unchanged. The wizard/source stays unmodified.
+    """
+    cmd = service.get('command')
+    entrypoint = service.get('entrypoint')
+    if not isinstance(cmd, list) or not all(isinstance(x, str) for x in cmd):
+        return False
+    if (len(cmd) == 3 and cmd[0] in ('sh', '/bin/sh', 'ash', '/bin/ash')
+            and cmd[1] == '-c'):
+        index = 2
+    elif (len(cmd) == 1 and isinstance(entrypoint, list)
+          and entrypoint in (['sh', '-c'], ['/bin/sh', '-c'],
+                             ['ash', '-c'], ['/bin/ash', '-c'])):
+        index = 0
+    else:
+        return False
+    script = cmd[index]
+    if '$$' not in script:
+        return False
+    raw = script.replace('$$', '$').encode('utf-8')
+    # Octal encoding takes five characters per byte; stay well within the
+    # kernel single-argument limit. Reject unexpectedly large scripts.
+    if len(raw) > 16000:
+        raise HTTPException(400, f'{service_name}: Shell-Kommando mit Compose-'
+                            'Variablen für sichere ZimaOS-Übergabe zu lang.')
+    octal = ''.join('\\0' + format(byte, '03o') for byte in raw)
+    tick = chr(96)  # POSIX backtick command substitution (no dollar sign)
+    cmd[index] = 'eval "' + tick + "printf %b '" + octal + "'" + tick + '"'
+    return True
+
+
 def _zimaos_compose(doc: dict) -> str:
     # ZimaOS accepts images only. Locally built source is never shipped as a build key.
     sanitized = yaml.safe_load(yaml.safe_dump(doc))
@@ -6524,10 +6564,11 @@ def _zimaos_compose(doc: dict) -> str:
     sanitized.pop(_BUILD_META, None)
     sanitized.pop(_CODEBERG_BUILD_META, None)
     sanitized.pop(_DOC_IMAGE_PREFLIGHT, None)
-    for svc in sanitized['services'].values():
+    for service_name, svc in sanitized['services'].items():
         if 'build' in svc:
             svc.pop('build')
             svc['pull_policy'] = 'never'
+        _im_protect_shell_command_for_zimaos(service_name, svc)
     return yaml.safe_dump(sanitized, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
 # Local-only images cannot be installed through the standard ZimaOS API: the
