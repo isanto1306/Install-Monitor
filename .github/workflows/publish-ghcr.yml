@@ -57,12 +57,12 @@ jobs:
           platforms: linux/amd64
           tags: |
             ghcr.io/isanto1306/install-monitor:beta
-            ghcr.io/isanto1306/install-monitor:0.2.59-beta.16
+            ghcr.io/isanto1306/install-monitor:0.2.60-beta.17
             ghcr.io/isanto1306/install-monitor:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/isanto1306/Install-Monitor
             org.opencontainers.image.title=Install Monitor
-            org.opencontainers.image.version=0.2.59-beta.16
+            org.opencontainers.image.version=0.2.60-beta.17
             org.opencontainers.image.licenses=GPL-3.0-only
           cache-from: type=gha
           cache-to: type=gha,mode=max
