@@ -757,6 +757,25 @@ def _im_auto_resolve_example_mounts(doc: dict, name: str, root: str) -> list[str
 
     notes: list[str] = []
     media_sources: set[str] | None = None
+    # An explicit media mount already selected in this same Compose is more
+    # authoritative than unrelated Docker containers or root folder names.
+    chosen_media: set[str] = set()
+    for service in doc['services'].values():
+        for mount in service.get('volumes') or []:
+            if isinstance(mount, str):
+                parts = mount.split(':', 2)
+                if len(parts) < 2:
+                    continue
+                declared_source, target = parts[:2]
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                declared_source, target = mount.get('source'), mount.get('target')
+            else:
+                continue
+            if (isinstance(declared_source, str) and isinstance(target, str)
+                    and target.rstrip('/').lower() in _IM_MEDIA_MOUNT_TARGETS
+                    and not _im_example_host_path(declared_source)
+                    and _im_available_media_directory(declared_source)):
+                chosen_media.add(declared_source)
     app_root = '/DATA/AppData/' + name
     for source, occurrences in placeholders.items():
         if any(_im_file_mount_expected(source, target) for _, _, target in occurrences):
@@ -766,7 +785,8 @@ def _im_auto_resolve_example_mounts(doc: dict, name: str, root: str) -> list[str
                     for _, _, target in occurrences)
         if media:
             if media_sources is None:
-                media_sources = _im_existing_nas_media_sources()
+                media_sources = (chosen_media if chosen_media else
+                                 _im_existing_nas_media_sources())
             if len(media_sources) != 1:
                 notes.append(
                     'Gemeinsamer Medienordner ' + source
