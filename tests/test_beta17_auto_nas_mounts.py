@@ -130,6 +130,35 @@ services:
             self.assertEqual(im._im_existing_nas_media_sources(), {'/DATA/Media'})
         self.assertEqual(run.call_count, 2)
 
+    def test_user_selected_source_overrides_unrelated_docker_candidates(self):
+        doc = im.safe_yaml(self.SOURCE)
+        doc['services']['sonarr']['volumes'][0] = '/DATA/SelectedMedia:/media:ro'
+        with patch.object(im, '_im_available_media_directory',
+                          side_effect=lambda p: p == '/DATA/SelectedMedia'), \
+             patch.object(im, '_im_existing_nas_media_sources') as finder:
+            im._im_auto_resolve_example_mounts(
+                doc, 'mkvpriority', '/DATA/AppData/mkvpriority')
+        finder.assert_not_called()
+        self.assertEqual(doc['services']['mkvpriority']['volumes'][0],
+                         '/DATA/SelectedMedia:/media')
+
+    def test_preview_integrates_auto_resolution_before_setup_validation(self):
+        doc = im.safe_yaml(self.SOURCE)
+        with patch.object(im, '_im_existing_nas_media_sources',
+                          return_value={'/DATA/Media'}), \
+             patch.object(im, 'require_ports_free',
+                          return_value={'ports': [], 'blocked': False}), \
+             patch.object(im, '_im_external_network_issues', return_value=[]):
+            result = im.build_plan(im.Plan(source=self.SOURCE,
+                                            name='mkvpriority', title='MKVPriority'))
+        rendered = im.safe_yaml(result['compose'])
+        self.assertTrue(result['install_ready'], result['setup_issues'])
+        self.assertEqual(rendered['services']['sonarr']['volumes'][0],
+                         '/DATA/Media:/media:ro')
+        self.assertEqual(rendered['services']['mkvpriority']['volumes'][0],
+                         '/DATA/Media:/media')
+        self.assertFalse(im._im_sample_mount_issues(rendered))
+
     def test_no_placeholders_requires_no_nas_probe(self):
         doc = im.safe_yaml('services:\n  app:\n    image: nginx\n    volumes:\n      - /DATA/Media:/media:ro\n')
         with patch.object(im, '_im_existing_nas_media_sources') as probe:
