@@ -97,6 +97,27 @@ class DockerHubUrlTests(unittest.TestCase):
         docs.assert_called_once_with('clamav/clamav:latest')
         check.assert_called_once_with(link)
 
+    def test_clamav_fallback_has_verified_database_mount_and_no_exposed_tcp(self):
+        url = 'https://hub.docker.com/r/clamav/clamav'
+        with (patch.object(im, '_public_remote', side_effect=lambda u: u),
+              patch.object(im, '_dockerhub_publisher_documentation', return_value=None),
+              patch.object(im, '_publisher_compose_for_image', return_value=None),
+              patch.object(im, '_im_default_lan_web_port', return_value=[]),
+              patch.object(im, '_auto_reassign_conflicting_ports', return_value=[]),
+              patch.object(im, 'inspect_remote_image_metadata') as oci):
+            result = im._analyze_source_payload(im.Source(kind='url', value=url))
+        config = im.safe_yaml(result['source'])
+        svc = config['services']['clamav']
+        self.assertEqual(svc['image'], 'clamav/clamav:latest')
+        self.assertEqual(svc['volumes'], ['/DATA/AppData/clamav/database:/var/lib/clamav'])
+        self.assertNotIn('ports', svc)
+        self.assertNotIn('x-install-monitor-review-required', config)
+        self.assertTrue(config[im._DOC_IMAGE_PREFLIGHT])
+        self.assertTrue(any('kein NAS-Ordner' in n for n in result['notes']))
+        self.assertEqual(result['automation']['metadata_only'], False)
+        self.assertEqual(result['automation']['source_type'], 'url')
+        oci.assert_not_called()
+
     def test_missing_publisher_compose_still_uses_oci_metadata(self):
         link = 'https://hub.docker.com/r/examplevendor/exampleapp'
         metadata = {
