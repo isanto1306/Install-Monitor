@@ -8012,6 +8012,39 @@ def _analyze_source_payload(payload: Source):
                         raise
                     source_notes.append('Herausgeber-Compose derzeit nicht abrufbar: '
                                         + str(exc.detail)[:180] + '. Versuche OCI-Analyse.')
+        if discovered is None and image.lower() in (
+                'clamav/clamav', 'clamav/clamav:latest',
+                'docker.io/clamav/clamav', 'docker.io/clamav/clamav:latest'):
+            # Official ClamAV Docker documentation specifies /var/lib/clamav
+            # for database persistence. ClamAV has no Web UI, and its clamd
+            # TCP listener must never be published by an automatic draft.
+            # Keep host storage under the ZimaOS-managed AppData directory.
+            # No scan-folder mount is invented: users select their own later.
+            image = 'clamav/clamav:latest'
+            clamav_doc = {
+                'name': 'clamav',
+                'services': {'clamav': {
+                    'image': image, 'restart': 'unless-stopped',
+                    'volumes': ['/DATA/AppData/clamav/database:/var/lib/clamav'],
+                }},
+                _DOC_IMAGE_PREFLIGHT: True,
+            }
+            discovered = (
+                yaml.safe_dump(clamav_doc, allow_unicode=True, sort_keys=False),
+                'https://docs.clamav.net/manual/Installing/Docker.html',
+                'https://hub.docker.com/r/clamav/clamav',
+                [
+                    'ClamAV: sicherer Einzelcontainer nach offizieller Docker-Dokumentation. '
+                    'Die Signaturdatenbank liegt dauerhaft in /DATA/AppData/clamav/database.',
+                    'ClamAV stellt keine Weboberfläche bereit. Ports 3310 und 7357 werden '
+                    'nicht automatisch am NAS veröffentlicht (ungeschützte TCP-Dienste).',
+                    'Es ist noch kein NAS-Ordner zum Virenscannen eingebunden. '
+                    'Diesen bei Bedarf als schreibgeschützten Bind-Mount selbst auswählen; '
+                    'Installation des Scan-Dienstes startet keine automatische Dateiprüfung.',
+                    'Erster Datenbankdownload kann dauern; die Datenbank im gemounteten '
+                    'Verzeichnis kann durch ClamAV mit angepassten Besitzrechten verwaltet werden.',
+                ],
+            )
         if discovered is not None:
             content, resolved_url, project_url, source_notes = discovered
             content, var_notes = _resolve_compose_variables(content)
