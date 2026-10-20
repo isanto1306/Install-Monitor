@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.59-beta.16"
+VERSION = "0.2.60-beta.17"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -654,30 +654,219 @@ def _im_example_host_path(source: str) -> bool:
     return isinstance(source, str) and source.lower().startswith(_IM_EXAMPLE_HOST_PREFIXES)
 
 
-def _im_sample_mount_issues(doc: dict) -> list[str]:
-    result = []
-    for svc_name, service in doc.get('services', {}).items():
-        if not isinstance(service, dict):
+# Beta 17: automatically reconcile safe NAS folders for publisher sample mounts.
+# Never use a made-up path for a media library or reuse another instance's
+# database/config directory. The existing Docker host is the source of truth.
+_IM_MEDIA_DIR_NAMES = frozenset({'media', 'medien', 'multimedia'})
+_IM_MEDIA_MOUNT_TARGETS = frozenset({'/media', '/data/media', '/mnt/media'})
+
+
+def _im_placeholder_media_role(source: str, target: str) -> bool:
+    """Only classify an actual media-library placeholder, not a config dir."""
+    if _im_file_mount_expected(source, target):
+        return False
+    suffix = source.lstrip('/').split('/')
+    source_part = (suffix[-1] if suffix else '').lower()
+    return (source_part in _IM_MEDIA_DIR_NAMES
+            or target.rstrip('/').lower() in _IM_MEDIA_MOUNT_TARGETS)
+
+
+def _im_available_media_directory(path: str) -> bool:
+    """Read-only verification via the NAS browse mounts; never follow links."""
+    if not isinstance(path, str) or len(path) > 500:
+        return False
+    if path in ('/DATA', '/media') or path.startswith('/DATA/AppData/'):
+        return False
+    try:
+        physical = _browse_path(path)
+        return physical.is_dir() and not physical.is_symlink()
+    except (OSError, HTTPException, ValueError):
+        return False
+
+
+def _im_existing_nas_media_sources() -> set[str]:
+    """Read bounded Docker mount metadata and exact known NAS media folders.
+
+    No Docker container is started, no paths are created and no credentials
+    or container environment are queried. Ambiguity is intentional: if more
+    than one distinct host source is plausible, the user must select it.
+    """
+    paths: set[str] = set()
+    try:
+        ids = subprocess.run(['docker', 'ps', '-q', '--no-trunc'],
+                             capture_output=True, text=True, timeout=8, check=False)
+        if ids.returncode == 0:
+            container_ids = [v for v in ids.stdout.splitlines()
+                             if re.fullmatch(r'[0-9a-f]{12,64}', v)][:100]
+            if container_ids:
+                mounts = subprocess.run(
+                    ['docker', 'inspect', '--format', '{{json .Mounts}}', *container_ids],
+                    capture_output=True, text=True, timeout=14, check=False)
+                if mounts.returncode == 0:
+                    for line in mounts.stdout.splitlines()[:100]:
+                        try:
+                            records = json.loads(line)
+                        except (ValueError, TypeError):
+                            continue
+                        if not isinstance(records, list):
+                            continue
+                        for mount in records[:80]:
+                            if not isinstance(mount, dict) or mount.get('Type') != 'bind':
+                                continue
+                            source, dest = mount.get('Source'), mount.get('Destination')
+                            if (isinstance(source, str) and isinstance(dest, str)
+                                    and dest.rstrip('/').lower() in _IM_MEDIA_MOUNT_TARGETS
+                                    and _im_available_media_directory(source)):
+                                paths.add(source)
+    except (OSError, subprocess.TimeoutExpired):
+        pass  # Safe uncertainty: never invent a missing host directory.
+    # Discover only a few *existing* unambiguous general-media roots. Do not
+    # confuse an arbitrary folder named "movies" with the whole /media root.
+    for root in ('/DATA', '/media'):
+        for name in ('Media', 'media', 'Medien', 'medien', 'Multimedia', 'multimedia'):
+            candidate = root + '/' + name
+            if _im_available_media_directory(candidate):
+                paths.add(candidate)
+    return paths
+
+
+def _im_auto_resolve_example_mounts(doc: dict, name: str, root: str) -> list[str]:
+    """Resolve generic sample directories before the normal strict preflight.
+
+    Config mounts become new app-owned directories only. Shared media mounts
+    are mapped to ONE verified existing NAS source or left unresolved. Existing
+    explicit mounts, named Docker volumes, file mounts, RO flags and target
+    paths are preserved verbatim. Repeated sample paths share one result.
+    """
+    placeholders: dict[str, list[tuple[str, int, str]]] = {}
+    for service_name, service in doc['services'].items():
+        for index, mount in enumerate(service.get('volumes') or []):
+            if isinstance(mount, str):
+                parts = mount.split(':', 2)
+                if len(parts) < 2:
+                    continue
+                source, target = parts[:2]
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                source, target = mount.get('source'), mount.get('target')
+            else:
+                continue
+            if isinstance(source, str) and isinstance(target, str) and _im_example_host_path(source):
+                placeholders.setdefault(source, []).append((service_name, index, target))
+    if not placeholders:
+        return []
+
+    notes: list[str] = []
+    media_sources: set[str] | None = None
+    # An explicit media mount already selected in this same Compose is more
+    # authoritative than unrelated Docker containers or root folder names.
+    chosen_media: set[str] = set()
+    for service in doc['services'].values():
+        for mount in service.get('volumes') or []:
+            if isinstance(mount, str):
+                parts = mount.split(':', 2)
+                if len(parts) < 2:
+                    continue
+                declared_source, target = parts[:2]
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                declared_source, target = mount.get('source'), mount.get('target')
+            else:
+                continue
+            if (isinstance(declared_source, str) and isinstance(target, str)
+                    and target.rstrip('/').lower() in _IM_MEDIA_MOUNT_TARGETS
+                    and not _im_example_host_path(declared_source)
+                    and _im_available_media_directory(declared_source)):
+                chosen_media.add(declared_source)
+    app_root = '/DATA/AppData/' + name
+    for source, occurrences in placeholders.items():
+        if any(_im_file_mount_expected(source, target) for _, _, target in occurrences):
+            # File mounts must refer to real files; do not create empty placeholders.
             continue
-        if service.get('profiles'):
+        media = any(_im_placeholder_media_role(source, target)
+                    for _, _, target in occurrences)
+        if media:
+            if media_sources is None:
+                media_sources = (chosen_media if chosen_media else
+                                 _im_existing_nas_media_sources())
+            if len(media_sources) != 1:
+                notes.append(
+                    'Gemeinsamer Medienordner ' + source
+                    + ': ' + ('keine eindeutige vorhandene NAS-Quelle gefunden'
+                             if not media_sources else
+                             str(len(media_sources)) + ' mögliche NAS-Ordner gefunden')
+                    + '; einmal unter NAS-Freigaben auswählen.')
+                continue
+            new_source = next(iter(media_sources))
+            notes.append('Gemeinsamer Medienordner automatisch anhand vorhandener '
+                         'NAS-Mounts erkannt: ' + new_source + '.')
+        else:
+            if root != app_root and not root.startswith(app_root + '/'):
+                notes.append('Beispiel-Konfigurationsordner nicht automatisch ersetzt: '
+                             'gewählter Datenpfad liegt außerhalb des app-eigenen '
+                             '/DATA/AppData-Bereichs.')
+                continue
+            relative = source.split('/', 3)[-1]  # e.g. sonarr/config
+            parts = relative.split('/')
+            if (not parts or len(parts) > 6 or
+                    any(not re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', part)
+                        or part in ('.', '..') for part in parts)):
+                continue
+            if len(parts) == 1:
+                # /path/to/config is not a shared per-service configuration.
+                # Use the owning service to prevent app and db writing together.
+                owners = {service for service, _, _ in occurrences}
+                if len(owners) != 1:
+                    continue
+                parts.insert(0, next(iter(owners)))
+            new_source = root.rstrip('/') + '/' + '/'.join(parts)
+            if len(new_source) > 500:
+                continue
+            notes.append('Konfigurationsordner automatisch zugeordnet: '
+                         + source + ' → ' + new_source + '.')
+        for service_name, index, _ in occurrences:
+            volumes = doc['services'][service_name]['volumes']
+            mount = volumes[index]
+            if isinstance(mount, str):
+                volumes[index] = new_source + mount[len(source):]
+            else:
+                mount['source'] = new_source
+    return notes
+
+
+def _im_sample_mount_issues(doc: dict) -> list[str]:
+    # One actionable issue per original NAS source, not one repeated warning
+    # for every service sharing /path/to/media.
+    grouped: dict[str, list[tuple[str, str]]] = {}
+    for svc_name, service in doc.get('services', {}).items():
+        if not isinstance(service, dict) or service.get('profiles'):
             continue
         for entry in service.get('volumes') or []:
             if isinstance(entry, str):
                 parts = entry.split(':', 2)
-                if len(parts) < 2: continue
+                if len(parts) < 2:
+                    continue
                 source, target = parts[:2]
             elif isinstance(entry, dict) and entry.get('type') == 'bind':
                 source, target = str(entry.get('source') or ''), str(entry.get('target') or '')
             else:
                 continue
-            if not _im_example_host_path(source):
-                continue
-            kind = 'Datei' if _im_file_mount_expected(source, target) else 'Ordner'
-            invalid = 'keine echte NAS-Datei' if kind == 'Datei' else 'kein echter NAS-Ordner'
-            result.append(f'{svc_name}: Hersteller-Beispielpfad {source} ist {invalid}. '
-                          f'Unter Zugangsdaten und NAS-Freigaben eine echte Quelle unter /DATA/AppData/... für {target} auswählen. '
-                          + ('Die Konfigurationsdatei muss vorher wirklich existieren; sie wird nicht automatisch erzeugt.'
-                             if kind == 'Datei' else 'Der Zielordner kann vor der Installation angelegt werden.'))
+            if _im_example_host_path(source):
+                grouped.setdefault(source, []).append((svc_name, target))
+    result: list[str] = []
+    for source, entries in grouped.items():
+        used_by = ', '.join(sorted(set(svc for svc, _ in entries)))
+        if any(_im_file_mount_expected(source, target) for _, target in entries):
+            result.append('Hersteller-Beispieldatei ' + source + ' für ' + used_by
+                          + ' ist keine vorhandene NAS-Datei. Originaldatei '
+                          'bereitstellen und unter NAS-Freigaben einmal zuordnen.')
+        elif any(_im_placeholder_media_role(source, target) for _, target in entries):
+            result.append('Gemeinsamer Medienordner ' + source + ' für ' + used_by
+                          + ' nicht eindeutig ermittelbar. Unter Zugangsdaten '
+                          'und NAS-Freigaben einmal den vorhandenen Medienordner '
+                          'auswählen; beide Dienste verwenden dieselbe Quelle.')
+        else:
+            result.append('Hersteller-Beispielordner ' + source + ' für ' + used_by
+                          + ' ist noch nicht zugeordnet. Unter NAS-Freigaben '
+                          'den echten NAS-Pfad wählen.')
     return result[:30]
 
 
@@ -6923,6 +7112,7 @@ def build_plan(p: Plan) -> dict:
     if not root.startswith(("/DATA/", "/media/")) or ".." in root.split("/") or not re.fullmatch(r"/[a-zA-Z0-9_./ -]{1,499}", root):
         raise HTTPException(400, "Der Datenordner muss unter /DATA/ oder /media/ liegen.")
     preparation_notes.extend(_im_resolve_zimaos_appid_binds(data, root))
+    preparation_notes.extend(_im_auto_resolve_example_mounts(data, name, root))
     # Silo's shipped default /opt/silo is a host storage path. The user has
     # explicitly selected the app-data base in this wizard; keep the upstream
     # per-service directory layout under that base, not in the host OS root.

@@ -1,23 +1,24 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.59 Beta 16 (20.10.2026)
+## Version 0.2.60 Beta 17 (20.10.2026)
 
-### Docker Compose Shell-Skripte: doppelte Variablenauswertung verhindern
-- Fix für Nametag: Die offizielle ZimaOS-Compose enthält POSIX-Shell-Kommandos mit Compose-Escape-Sequenzen wie `$$secrets`, `$$DB_PASSWORD` und `$$(rand 32)`. Werden diese unterwegs zweimal als Compose-Ausdrücke interpretiert, kann z. B. das Ausgabeziel von `nametag-init` leer werden.
-- Beim tatsächlichen ZimaOS-Installationsauftrag werden ausdrücklich deklarierte `sh -c`-/`ash -c`-Array-Skripte mit `$$` vor erneuter Compose-Interpolation geschützt: Einmaliges Auflösen des Compose-Dollar-Escapes und Transport der Shell-Anweisung als POSIX-`printf`-Oktalfolge. Der Transport enthält selbst keine Dollarzeichen.
-- Es sind weder zusätzliche Binaries noch zusätzliche Host-Mounts erforderlich. Der Shell-Prozess führt weiterhin die ursprüngliche Herstellerlogik aus.
-- Die Vorschau und der Hersteller-Quellcode bleiben unverändert. Andere Befehlstypen werden nicht blind umgeschrieben. Überlange Skripte werden mit einer klaren Fehlermeldung abgelehnt.
-- Testabdeckung für Nametag-Initialisierung, Cron-Tokens, reguläre Skripte und wiederholte Compose-Verarbeitung.
+### Automatische Hersteller-Pfadzuordnung beim Compose-Import
+- Ordnerplatzhalter wie `/path/to/sonarr/config` oder `/path/to/mkvpriority/config` werden im regulären Installationsassistenten selbstständig in app-eigene Ordner unter `/DATA/AppData/<App-Name>/...` überführt. Die Ordner werden wie bisher erst unmittelbar vor der Installation sicher vorbereitet.
+- Gemeinsame Hersteller-Medienplatzhalter (`/path/to/media`) werden aus eindeutig vorhandenen, schreibgeschützt geprüften NAS-Ordnern und Docker-Bind-Mounts übernommen. Eine bereits ausdrücklich für einen Dienst ausgewählte Medienquelle hat Vorrang und wird für andere Dienste desselben Stacks wiederverwendet.
+- Existieren keine oder mehrere verschiedene mögliche Quellen, bleibt der Platzhalter erhalten und Install Monitor fordert genau eine Medienordner-Auswahl an; keine erfundenen Medienbibliotheken, keine neuen Medienordner.
+- Mehrfach gemeldete Beispielpfade werden zu einer einzigen verständlichen Meldung pro gemeinsamer Quelle zusammengefasst.
+- Existierende Mounts, benannte Docker-Volumes, Dateimounts, read-only-Angaben und Mount-Zielpfade bleiben unverändert. Bestehende Sonarr-Konfigurationen anderer Installationen werden nicht stillschweigend geteilt oder verändert.
+- Die Erkennung liest nur begrenzte Docker-Mount-Metadaten und wenige existierende NAS-Ordner; keine Container-Neustarts, kein Lesen von Geheimnissen.
 
-### Bestehende Verbesserungen bleiben erhalten
-- Offizielle herstellereigene ZimaOS-Compose bevorzugen, externe Docker-Netzwerke vor Installation prüfen und fehlende Netzwerke nicht eigenmächtig erzeugen.
-- Einmalige Initialisierungscontainer mit Exit-Code 0 als erfolgreich erkennen, fehlende Container und Images differenziert melden.
-- NAS-Zeitzone erkennen statt feste Regionen zu unterstellen; unterstützte Compose-Variablen und lokale Secrets kontrolliert auflösen.
+### Fortgeführte Funktionen
+- Beta 16: Shell-Variablen in Hersteller-Initialisierung und Cron-Skripten werden sicher durch die ZimaOS-Compose-Verarbeitung transportiert.
+- Beta 15: Offizielle ZimaOS-Konfigurationen bevorzugen, externe Netzwerke vorab prüfen und Einmal-Initialisierungscontainer korrekt erkennen.
+- Beta 14: Unterstützte lokale Secrets und Compose-Werte konservativ automatisch auflösen; tatsächliche NAS-Zeitzone nutzen.
 
 ### Veröffentlichung
-- Backend, Frontend, Compose-Vorlage, Installer und GHCR-Workflow verwenden `0.2.59-beta.16`.
-- Geplante Tags: `ghcr.io/isanto1306/install-monitor:0.2.59-beta.16` und `:beta`.
-- Der iSanto1306 ZimaOS App Store wird nach erfolgreicher GHCR-Veröffentlichung synchronisiert.
-- Eine GitHub-CI-Prüfung ersetzt keinen tatsächlichen Installationstest auf ZimaOS.
+- Backend, Docker-Compose, Installer, Web-Oberfläche und GHCR-Workflow verwenden `0.2.60-beta.17`.
+- Vorgesehene Image-Tags: `ghcr.io/isanto1306/install-monitor:0.2.60-beta.17` und `:beta`.
+- Der iSanto1306 Zima-App-Store wird nach erfolgreichem GHCR-Build aktualisiert.
+- Ein erfolgreicher Offline-CI-Test ersetzt keinen Praxistest mit ZimaOS.
 
-**Versionsregel:** Die Release Notes enthalten nur die aktuelle Beta.
+**Versionsregel:** Diese Datei dokumentiert nur die aktuelle Beta.
