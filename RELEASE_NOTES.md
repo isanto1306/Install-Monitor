@@ -1,24 +1,23 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.60 Beta 17 (20.10.2026)
+## Version 0.2.61 Beta 18 (20.10.2026)
 
-### Automatische Hersteller-Pfadzuordnung beim Compose-Import
-- Ordnerplatzhalter wie `/path/to/sonarr/config` oder `/path/to/mkvpriority/config` werden im regulären Installationsassistenten selbstständig in app-eigene Ordner unter `/DATA/AppData/<App-Name>/...` überführt. Die Ordner werden wie bisher erst unmittelbar vor der Installation sicher vorbereitet.
-- Gemeinsame Hersteller-Medienplatzhalter (`/path/to/media`) werden aus eindeutig vorhandenen, schreibgeschützt geprüften NAS-Ordnern und Docker-Bind-Mounts übernommen. Eine bereits ausdrücklich für einen Dienst ausgewählte Medienquelle hat Vorrang und wird für andere Dienste desselben Stacks wiederverwendet.
-- Existieren keine oder mehrere verschiedene mögliche Quellen, bleibt der Platzhalter erhalten und Install Monitor fordert genau eine Medienordner-Auswahl an; keine erfundenen Medienbibliotheken, keine neuen Medienordner.
-- Mehrfach gemeldete Beispielpfade werden zu einer einzigen verständlichen Meldung pro gemeinsamer Quelle zusammengefasst.
-- Existierende Mounts, benannte Docker-Volumes, Dateimounts, read-only-Angaben und Mount-Zielpfade bleiben unverändert. Bestehende Sonarr-Konfigurationen anderer Installationen werden nicht stillschweigend geteilt oder verändert.
-- Die Erkennung liest nur begrenzte Docker-Mount-Metadaten und wenige existierende NAS-Ordner; keine Container-Neustarts, kein Lesen von Geheimnissen.
+### Docker Compose aus unvollständigen Hersteller-Beispielen ergänzen
+- Der Compose-YAML-Import erkennt eindeutig definierte einzelne oder mehrere Docker-Dienste, wenn nur die übergeordnete `services:`-Zeile fehlt. Bei echten Dienstzuordnungen mit `image` oder `build` wird der fehlende Compose-Strukturblock sicher ergänzt.
+- Vorhandene `networks`-, `volumes`-, `name`- und `x-*`-Metadaten bleiben erhalten; Service-Definitionen, Secrets, Volumes und Ports werden nicht erfunden.
+- Mehrdeutige, fehlerhafte oder ausdrücklich unvollständige Compose-Dateien bleiben unverändert und werden wie bisher mit einer konkreten Meldung abgewiesen.
+- Die automatische Reparatur erfolgt vor der ersten Quellanalyse; Beta 17 kann anschließend Konfigurations-Beispielpfade zuordnen und eindeutige gemeinsame NAS-Medienpfade auflösen.
+- Regressionstests prüfen direkte Hersteller-Service-Snippets, mehrere Dienste, vorhandene Top-Level-Volumes und Netzwerke, unveränderte Rechte und Mounts, vorsichtige Ablehnung von Fehlkonfigurationen sowie die komplette Quellanalyse bis zur Installationsvorschau.
 
-### Fortgeführte Funktionen
-- Beta 16: Shell-Variablen in Hersteller-Initialisierung und Cron-Skripten werden sicher durch die ZimaOS-Compose-Verarbeitung transportiert.
-- Beta 15: Offizielle ZimaOS-Konfigurationen bevorzugen, externe Netzwerke vorab prüfen und Einmal-Initialisierungscontainer korrekt erkennen.
-- Beta 14: Unterstützte lokale Secrets und Compose-Werte konservativ automatisch auflösen; tatsächliche NAS-Zeitzone nutzen.
+### Bestehende Funktionen bleiben erhalten
+- Beta 17: Sichere automatische NAS-AppData-Ordnerzuordnung, eindeutige Medienmount-Erkennung und eine einzige Rückfrage bei Mehrdeutigkeit.
+- Beta 16: Shell-Befehle und Cron-Variablen bleiben bei wiederholter ZimaOS-Compose-Auswertung erhalten.
+- Beta 15: Hersteller-ZimaOS-Compose bevorzugen, fehlende externe Netzwerke frühzeitig erkennen, einmalige Initialisierungscontainer korrekt behandeln.
 
 ### Veröffentlichung
-- Backend, Docker-Compose, Installer, Web-Oberfläche und GHCR-Workflow verwenden `0.2.60-beta.17`.
-- Vorgesehene Image-Tags: `ghcr.io/isanto1306/install-monitor:0.2.60-beta.17` und `:beta`.
-- Der iSanto1306 Zima-App-Store wird nach erfolgreichem GHCR-Build aktualisiert.
-- Ein erfolgreicher Offline-CI-Test ersetzt keinen Praxistest mit ZimaOS.
+- Backend, Docker-Compose, Installer, Oberfläche und GHCR-Workflow verwenden `0.2.61-beta.18`.
+- Image-Tags: `ghcr.io/isanto1306/install-monitor:0.2.61-beta.18` und `:beta`.
+- iSanto1306 Zima-App-Store nach erfolgreichem GHCR-Build synchronisieren.
+- GitHub-Tests ersetzen keinen NAS-Praxistest.
 
-**Versionsregel:** Diese Datei dokumentiert nur die aktuelle Beta.
+**Versionsregel:** Nur die aktuelle Beta wird hier dokumentiert.
