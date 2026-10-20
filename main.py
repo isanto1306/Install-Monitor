@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.13"
+VERSION = "0.2.57-beta.14"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -267,7 +267,7 @@ class Plan(BaseModel):
     cloudflare_tunnel_token: str = Field(default="", max_length=2048)
     resources: dict[str, ServiceResources] = Field(default_factory=dict)
     target_system: str = Field(default="zimaos", pattern=r"^(zimaos|casaos|docker)$")
-    timezone_mode: str = Field(default="original", pattern=r"^(original|nas|manual)$")
+    timezone_mode: str = Field(default="nas", pattern=r"^(original|nas|manual)$")
     timezone_name: str = Field(default="", max_length=90)
     timezone_add_missing: bool = False
 
@@ -3743,8 +3743,34 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
         ) for svc in (doc.get('services') or {}).values()
     )
 
+    # Existing explicit upstream values always outrank generated fallbacks.
+    known: dict[str, set[str]] = {}
+    for service in (doc.get('services') or {}).values():
+        if not isinstance(service, dict):
+            continue
+        for key, value in _im_environment_entries(service).items():
+            if value and '${' not in value:
+                known.setdefault(key, set()).add(value)
+    existing = {key: next(iter(values)) for key, values in known.items()
+                if len(values) == 1}
+
+    # Only a bundled local database permits generating its user and DB name.
+    local_database = any(
+        isinstance(svc, dict) and re.match(
+            r'^(?:(?:docker\\.io|ghcr\\.io)/)?(?:library/)?(?:postgres|mysql|mariadb)(?::|@|$)',
+            str(svc.get('image') or '').lower())
+        for svc in (doc.get('services') or {}).values()
+    )
+    database_names = {'POSTGRES_USER', 'POSTGRES_DB', 'MYSQL_USER',
+                      'MYSQL_DATABASE', 'MARIADB_USER', 'MARIADB_DATABASE'}
+    database_defaults = {'POSTGRES_DB': 'appdb', 'MYSQL_DATABASE': 'appdb',
+                         'MARIADB_DATABASE': 'appdb'}
+
     def local_secret_name(name: str) -> bool:
-        standard = bool(re.search(r'(?:SECRET(?:_KEY)?|PASSWORD|TOKEN|PRIVATE_KEY|MASTER_KEY)$', name))
+        if _im_credential_spec(name, doc)['mode'] == 'external':
+            return False
+        standard = bool(re.search(
+            r'(?:SECRET(?:_KEY)?|PASSWORD|PASSWD|TOKEN|PRIVATE_KEY|MASTER_KEY)$', name))
         return standard or (healthlog_image and name in ('API_TOKEN_HMAC_KEY', 'ENCRYPTION_KEY'))
 
     def expand(value: str) -> str:
@@ -3758,11 +3784,22 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
                 name, operator, fallback = match.groups()
                 if name in generated:
                     return generated[name]
+                if name in existing:
+                    defaults.add(name)
+                    return existing[name]
+                if name == 'TZ':
+                    zone, _ = _host_timezone()
+                    if zone:
+                        defaults.add(name)
+                        return zone
                 # Required Compose forms ${VAR:?message} / ${VAR?message}:
                 # generate only credentials, never guess an existing host path.
                 if operator in (':?', '?'):
                     if local_secret_name(name):
                         generated[name] = _im_generate_local_secret(name, doc)
+                        return generated[name]
+                    if local_database and name in database_names:
+                        generated[name] = database_defaults.get(name, 'app_' + secrets.token_hex(4))
                         return generated[name]
                     unresolved.add(name)
                     return match.group(0)
@@ -3773,6 +3810,9 @@ def _resolve_compose_variables(content: str) -> tuple[str, list[str]]:
                     return ''
                 if local_secret_name(name) and name != 'ACCESS_TOKEN_URL':
                     generated[name] = _im_generate_local_secret(name, doc)
+                    return generated[name]
+                if local_database and name in database_names and operator is None:
+                    generated[name] = database_defaults.get(name, 'app_' + secrets.token_hex(4))
                     return generated[name]
                 if operator is not None:
                     defaults.add(name)
@@ -6627,7 +6667,9 @@ def _apply_timezone_choice(doc: dict, p: Plan, notes: list[str]) -> None:
     if p.timezone_mode == 'nas':
         zone, error = _host_timezone()
         if not zone:
-            raise HTTPException(400, 'NAS-Zeitzone konnte nicht ermittelt werden. Bitte manuell wählen oder den Originalwert behalten.')
+            notes.append('NAS-Zeitzone nicht ermittelbar; Hersteller-Zeitzone bleibt erhalten. '
+                         'Bei Bedarf im Zeitzonenabschnitt manuell auswählen.')
+            return
     else:
         zone = p.timezone_name.strip()
         if not _valid_timezone(zone):
@@ -8639,6 +8681,20 @@ INSTALL_PHASES = ('preflight', 'login', 'existing', 'build', 'directories', 'sub
 VERIFY_TIMEOUT_SECONDS = 360
 
 
+def _im_safe_runtime_error(error: str, doc: dict) -> str:
+    """Expose the complete bounded OCI diagnosis without known Compose secrets."""
+    value = str(error or '').strip()
+    for service in (doc.get('services') or {}).values():
+        if not isinstance(service, dict):
+            continue
+        for key, secret in _im_environment_entries(service).items():
+            if (re.search(r'(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|MASTER_KEY)', key, re.I)
+                    and len(secret) >= 8):
+                value = value.replace(secret, '[REDACTED]')
+    value = re.sub(r'(?i)(://[^:/\\s]+:)[^@/\\s]+(@)', r'\\1[REDACTED]\\2', value)
+    return value[:1400]
+
+
 def _job_update(job_id: str, *, phase: str | None = None, message: str | None = None,
                 state: str | None = None, containers: list | None = None,
                 events: str | None = None, accepted: bool | None = None) -> None:
@@ -8649,7 +8705,7 @@ def _job_update(job_id: str, *, phase: str | None = None, message: str | None = 
         if phase is not None:
             job['phase'] = phase
         if message is not None:
-            job['message'] = message[:400]
+            job['message'] = message[:1500]
         if state is not None:
             job['state'] = state
         if containers is not None:
@@ -8657,7 +8713,7 @@ def _job_update(job_id: str, *, phase: str | None = None, message: str | None = 
         if accepted is not None:
             job['accepted'] = accepted
         if events:
-            job['events'].append({'at': time.strftime('%H:%M:%S'), 'message': events[:350]})
+            job['events'].append({'at': time.strftime('%H:%M:%S'), 'message': events[:1500]})
             job['events'] = job['events'][-60:]
         job['updated'] = time.monotonic()
 
@@ -8684,7 +8740,7 @@ def _read_compose_containers(name: str) -> list[dict]:
         result.append({'service': service, 'id': ident,
                        'state': str(raw.get('Status') or 'unknown'),
                        'health': health or '', 'exit_code': raw.get('ExitCode'),
-                       'error': str(raw.get('Error') or '')[:250]})
+                       'error': str(raw.get('Error') or '')[:1600]})
     return sorted(result, key=lambda x: x['service'])
 
 
@@ -8976,11 +9032,13 @@ def _job_worker(job_id: str, payload: Install) -> None:
             # failed bind mount. Surface the actual daemon error immediately;
             # six minutes of polling cannot repair an invalid host path.
             for current in observed:
-                docker_error = str(current.get('error') or '').strip()
+                docker_error = _im_safe_runtime_error(current.get('error') or '', doc)
                 if current.get('state') in ('created', 'dead', 'exited') and docker_error:
-                    _job_update(job_id, phase='verification', state='warning', containers=observed,
-                                message=f"{current['service']}: Docker-Start fehlgeschlagen: " + docker_error[:320],
-                                events=f"{current['service']}: Docker meldet einen Startfehler; kein erfolgreicher Containerstart.")
+                    safe_observed = [{**item, 'error': _im_safe_runtime_error(item.get('error') or '', doc)}
+                                     for item in observed]
+                    detail = f"{current['service']}: Docker-Start fehlgeschlagen: " + docker_error
+                    _job_update(job_id, phase='verification', state='warning', containers=safe_observed,
+                                message=detail, events=detail)
                     return
             # A restart loop can be present even while ZimaOS reports the app
             # as running. Distinguish transient startup from persistent failure.
