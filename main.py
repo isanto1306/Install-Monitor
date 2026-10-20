@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.56-beta.12"
+VERSION = "0.2.56-beta.13"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -1319,7 +1319,7 @@ def _public_remote(url: str) -> str:
     if p.port not in (None, 443):
         raise HTTPException(400, "Quell-URLs dürfen keinen anderen Port verwenden.")
     # limit remote YAML sources to known code hosts; no SSRF against the NAS or LAN.
-    allowed = {"github.com", "raw.githubusercontent.com", "api.github.com", "gitlab.com", "codeberg.org", "raw.codeberg.page", "gist.githubusercontent.com", "gitea.baerentsen.space"}
+    allowed = {"github.com", "raw.githubusercontent.com", "api.github.com", "gitlab.com", "codeberg.org", "raw.codeberg.page", "gist.githubusercontent.com", "gitea.baerentsen.space", "hub.docker.com"}
     if p.hostname.lower() not in allowed:
         raise HTTPException(400, "Quelle nicht freigegeben. Bitte den YAML-Inhalt direkt einfügen.")
     try:
@@ -4134,6 +4134,80 @@ def _discover_gitea_publisher(host: str, owner: str, repo: str) -> tuple[str, st
                 raise HTTPException(422, 'Gitea-Compose benötigt einen lokalen Build ohne geprüften Build-Kontext. Bitte ein veröffentlichtes Hersteller-Image verwenden.')
             return source, url, [f'Gitea: {name} im Branch {branch} erkannt.', 'Ports und NAS-Pfade vor der Installation überprüfen.']
     raise HTTPException(422, 'Kein vollständiges Hersteller-Compose-Beispiel gefunden. Bitte eine direkte Compose-YAML oder ein veröffentlichtes Docker-Image verwenden.')
+
+
+
+_DOCKER_HUB_REPO_NAME = re.compile(r'^[a-z0-9][a-z0-9_.-]{0,99}$')
+
+
+def _dockerhub_image_from_url(value: str) -> tuple[str, str] | None:
+    """Map only real Docker Hub repository pages to their image identity.
+
+    URLs are identifiers, not HTML/Compose inputs. No browser scraping, no
+    guessed image tags from filters, and no arbitrary registry hosts.
+    """
+    url = urllib.parse.urlsplit(value.strip())
+    if not url.hostname or url.hostname.lower() != 'hub.docker.com':
+        return None
+    if (url.scheme != 'https' or url.username or url.password
+            or url.port not in (None, 443) or url.query):
+        raise HTTPException(400, 'Docker-Hub-Links müssen öffentliche HTTPS-Projektlinks ohne Zugangsdaten, Port oder Suchfilter sein.')
+    segments = url.path.strip('/').split('/')
+    if segments and segments[-1] == 'tags':
+        segments.pop()
+    if len(segments) == 3 and segments[0] == 'r':
+        owner, repository = segments[1:]
+        if not all(_DOCKER_HUB_REPO_NAME.fullmatch(name) and name not in ('.', '..')
+                   for name in (owner, repository)):
+            raise HTTPException(400, 'Ungültiger Docker-Hub-Repository-Name.')
+        image = repository if owner == 'library' else owner + '/' + repository
+        canonical = 'https://hub.docker.com/r/' + owner + '/' + repository
+    elif len(segments) == 2 and segments[0] == '_':
+        repository = segments[1]
+        if not _DOCKER_HUB_REPO_NAME.fullmatch(repository) or repository in ('.', '..'):
+            raise HTTPException(400, 'Ungültiger offizieller Docker-Hub-Image-Name.')
+        image = repository
+        canonical = 'https://hub.docker.com/_/' + repository
+    else:
+        raise HTTPException(400, 'Docker-Hub-Link nicht unterstützt. Bitte /r/Herausgeber/Image oder /_/Image verwenden.')
+    return image + ':latest', canonical
+
+
+def _dockerhub_url_safe_draft(document: dict, image: str) -> list[str]:
+    """Make imported ClamAV daemon drafts private by default, no Web UI guessed."""
+    name = image.lower().split('@', 1)[0].split(':', 1)[0]
+    if name not in ('clamav/clamav', 'docker.io/clamav/clamav'):
+        return []
+    notes = [
+        'ClamAV ist ein Virenscanner ohne Weboberfläche. Ein Host-Port für clamd '
+        'wird nicht automatisch freigegeben; Datei-Mounts und Scan-Aufträge '
+        'müssen anhand der Herstellerdokumentation eingerichtet werden.'
+    ]
+    for service in document['services'].values():
+        ref = str(service.get('image') or '').lower()
+        if ref.split('@', 1)[0].split(':', 1)[0] not in ('clamav/clamav', 'docker.io/clamav/clamav'):
+            continue
+        keep = []
+        for mapping in service.get('ports', []) or []:
+            if isinstance(mapping, str):
+                without_proto = mapping.rsplit('/', 1)[0]
+                target = without_proto.rsplit(':', 1)[-1]
+            elif isinstance(mapping, dict):
+                target = str(mapping.get('target', ''))
+            else:
+                keep.append(mapping)
+                continue
+            if target == '3310':
+                notes.append('ClamAV-Port 3310/TCP wurde aus dem automatischen Host-Port-Entwurf entfernt. '
+                             'Nur nach expliziter Netzwerksicherheitsprüfung manuell freigeben.')
+            else:
+                keep.append(mapping)
+        if 'ports' in service:
+            if keep:
+                service['ports'] = keep
+            else:
+                service.pop('ports', None)
+    return notes
 
 
 def discover_source(value: str) -> tuple[str, str, list[str]]:
@@ -7887,6 +7961,31 @@ def analyze(req: Request, payload: Source):
 
 
 def _analyze_source_payload(payload: Source):
+    # Docker Hub web links are identifiers for Docker images, NOT Compose URLs.
+    # Reuse the image pipeline, including publisher documentation and OCI
+    # metadata, instead of downloading and parsing arbitrary Hub HTML.
+    hub = _dockerhub_image_from_url(payload.value) if payload.kind == 'url' else None
+    if hub is not None:
+        image, publisher_url = hub
+        _public_remote(payload.value.strip())
+        normalized = payload.model_copy(update={'kind': 'image', 'value': image})
+        result = _analyze_source_payload(normalized)
+        document = safe_yaml(result['source'])
+        safety_notes = _dockerhub_url_safe_draft(document, image)
+        document[_DOC_IMAGE_PREFLIGHT] = True  # Verify published tag before ZimaOS POST.
+        result['source'] = yaml.safe_dump(document, allow_unicode=True, sort_keys=False)
+        result['project_url'] = publisher_url
+        result['notes'] = [
+            'Docker-Hub-Projektlink erkannt: ' + publisher_url +
+            ' → ' + image + '. Für den gewählten Image-Tag wird vor der Installation '
+            'ein Registry-Manifest geprüft.',
+            'Docker Hub dokumentiert das Image; diese Quellanalyse garantiert keine '
+            'vollständige Installationskonfiguration. Datenpfade und Dienste prüfen.',
+        ] + safety_notes + result['notes']
+        result['automation']['source_type'] = 'url'
+        result['automation']['verified_publisher_compose'] = bool(
+            result['resolved_url'] and not document.get('x-install-monitor-review-required'))
+        return result
     project_url = icon_url = resolved_url = ''
     source_notes: list[str] = []
     var_notes: list[str] = []
