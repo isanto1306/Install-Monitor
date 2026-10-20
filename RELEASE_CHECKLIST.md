@@ -1,6 +1,6 @@
-# Freigabecheckliste v0.2.59
+# Freigabecheckliste v0.2.60
 
-- [x] Installer und Compose verwenden dieselbe Backend-Version 0.2.59.
+- [x] Installer und Compose verwenden dieselbe Backend-Version 0.2.60.
 - [x] Erstinstallation fordert Benutzername, Passwort und sicheres Session-Secret.
 - [x] Login-Passwort wird als PBKDF2-Hash gespeichert; Secret ist nicht im Repository.
 - [x] Alte Image-Namen, Login-Passwort-Druckausgaben und fehlendes `register_zimaos.py` entfernt.
@@ -21,4 +21,4 @@
 
 - [ ] Eigenes **öffentliches und leeres** Repository `isanto1306/Install-Monitor` anlegen (keine Auto-README oder Git-Historie importieren).
 - [ ] Nur den bereinigten Quellcode aus diesem Paket committen, keine privaten NAS-Dateien.
-- [ ] Tag `v0.2.59-beta.16` erst setzen, wenn Release-Checks bestanden und Rest-Risiken akzeptiert sind.
+- [ ] Tag `v0.2.60-beta.17` erst setzen, wenn Release-Checks bestanden und Rest-Risiken akzeptiert sind.
