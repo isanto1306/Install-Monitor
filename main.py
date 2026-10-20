@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.57-beta.14"
+VERSION = "0.2.58-beta.15"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -2473,6 +2473,24 @@ def _github_repository_files(base: str, branch: str, repository_size: int) -> tu
     return files, incomplete
 
 
+def _im_official_zimaos_path(path: str, repo: str) -> bool:
+    """Publisher-hosted native recipe, not a generic root development stack.
+
+    An application-specific folder prevents unrelated nested deployment
+    examples from outranking the actual publisher application.
+    """
+    parts = path.lower().split('/')
+    app = repo.lower().replace('_', '-')
+    folders = [part.replace('_', '-') for part in parts[:-1]]
+    return (
+        (parts[-1] in ('compose.yml', 'compose.yaml', 'docker-compose.yml', 'docker-compose.yaml'))
+        and len(parts) >= 3
+        and ('zimaos' in folders or 'casaos' in folders)
+        and (app in folders or (folders[-1] in ('zimaos', 'casaos')
+                                 and app in parts[-1].replace('_', '-')))
+    )
+
+
 def _github_deploy_score(path: str, repo: str) -> int:
     """Rank YAML for a bounded read-and-parse probe, including generic names.
 
@@ -2496,6 +2514,8 @@ def _github_deploy_score(path: str, repo: str) -> int:
         # variant is evidenced. This only changes ranking, not installation.
         depth_penalty = min(path.count('/') * 25, 125)
         priority = legacy + 150 - depth_penalty
+        if _im_official_zimaos_path(path, repo):
+            priority += 400  # Explicit vendor ZimaOS bundle precedes root Compose.
         # The publisher may document a pre-built release stack next to the
         # source/developer Compose. Read image-tag variants early so a large
         # repository scan does not exhaust its deadline on a build-only root.
@@ -3543,6 +3563,9 @@ def _discover_github_repository(parts: list[str]) -> tuple[str, str, list[str]]:
                     or score >= 30):
                 continue
         publisher_match = _im_repo_matches_compose(doc, repo)
+        if _im_official_zimaos_path(path, repo) and not publisher_match:
+            # A matching path is not proof of a matching app image.
+            continue
         example_path = any(part in _GITHUB_EXAMPLE_DIRS for part in path.lower().split('/')[:-1])
         # Documentation examples may be different apps bundled in this repo.
         # Keep their availability visible, but do not pick such a sidecar in
@@ -3588,7 +3611,9 @@ def _discover_github_repository(parts: list[str]) -> tuple[str, str, list[str]]:
         selected = chosen
         if selected:
             _, selected_path, _, selected_content = selected
-            if selected_path == path and path.count('/') == 0 and score >= 310:
+            if (selected_path == path and path.count('/') == 0 and score >= 310
+                    and not any(_im_official_zimaos_path(remaining, repo)
+                                for _, remaining in candidates[candidate_number:])):
                 if (all(isinstance(svc, dict) and bool(svc.get('image')) and not svc.get('build')
                         for svc in doc['services'].values())
                     and not _im_compose_external_file_issues(doc)):
