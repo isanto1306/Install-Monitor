@@ -254,5 +254,37 @@ volumes:
 
 
 
+    def test_not_rewrite_when_target_is_generic_docker(self):
+        with patch.object(im, '_im_existing_docker_volume_names') as finder, \
+             patch.object(im, 'require_ports_free',
+                          return_value={'ports': [], 'blocked': False}), \
+             patch.object(im, '_im_external_network_issues', return_value=[]):
+            result = im.build_plan(im.Plan(
+                source=self.source, name='rssmonster', title='RSSMonster',
+                target_system='docker'))
+        output = im.safe_yaml(result['compose'])
+        self.assertEqual(
+            output['services']['rssmonster']['volumes'][0],
+            'rssmonster-data:/app/data')
+        finder.assert_not_called()
+
+    def test_ambiguous_ro_rw_flags_are_never_changed(self):
+        source = """
+services:
+  app:
+    image: busybox
+    volumes:
+      - data:/data:ro,rw
+volumes:
+  data: {}
+"""
+        doc, notes, finder = self._convert(source)
+        finder.assert_not_called()
+        self.assertEqual(doc['services']['app']['volumes'][0],
+                         'data:/data:ro,rw')
+        self.assertIn('data', doc['volumes'])
+        self.assertTrue(any('Spezielle Mount-Optionen' in n for n in notes))
+
+
 if __name__ == '__main__':
     unittest.main()
