@@ -92,7 +92,6 @@ volumes:
         self.assertTrue(any('existiert bereits' in note for note in notes))
 
     def test_failed_docker_inspection_preserves_all_data(self):
-        doc, notes, _ = self._convert(existing=None if False else set())
         with patch.object(im, '_im_existing_docker_volume_names', return_value=None):
             original = im.safe_yaml(self.source)
             warnings = im._im_convert_local_named_volumes(
@@ -200,6 +199,59 @@ volumes:
         self.assertEqual(generated['services']['rssmonster-worker']['volumes'][0]['source'],
                          '/DATA/AppData/rssmonster/rssmonster-data')
         self.assertTrue(result['install_ready'], result['setup_issues'])
+
+
+    def test_shared_appdata_runtime_inspection_detects_wrong_host_paths(self):
+        doc, _, _ = self._convert()
+        doc['name'] = 'rssmonster'
+        shared = im._im_expected_shared_appdata_binds(doc)
+        self.assertEqual(len(shared), 2)
+        data = '/DATA/AppData/rssmonster/rssmonster-data'
+        health = '/DATA/AppData/rssmonster/rssmonster-worker-health'
+        self.assertEqual(len(shared[data]), 3)
+        self.assertEqual(len(shared[health]), 2)
+        observed = [{'service': name, 'id': str(i) * 12}
+                    for i, name in enumerate(doc['services'], 1)]
+        mounts = {
+            '1' * 12: [
+                {'Source': data, 'Destination': '/app/data', 'RW': True},
+                {'Source': health, 'Destination': '/app/worker-health', 'RW': False}],
+            '2' * 12: [
+                {'Source': data, 'Destination': '/app/data', 'RW': True},
+                {'Source': health, 'Destination': '/app/worker-health', 'RW': True}],
+            '3' * 12: [
+                {'Source': data, 'Destination': '/app/data', 'RW': True}],
+        }
+        with patch.object(im, '_im_readonly_mounts',
+                          side_effect=lambda ident: mounts[ident]):
+            self.assertEqual(im._im_runtime_shared_volume_issues(doc, observed), [])
+            mounts['2' * 12][0]['Source'] = '/var/lib/docker/volumes/wrong'
+            problems = im._im_runtime_shared_volume_issues(doc, observed)
+        self.assertTrue(any('unterschiedliche Host-Datenquellen' in p
+                            for p in problems))
+
+    def test_named_volumes_with_driver_opts_never_get_rewritten(self):
+        source = """
+services:
+  app:
+    image: busybox
+    volumes:
+      - special:/data
+volumes:
+  special:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /DATA/Storage
+"""
+        doc, notes, finder = self._convert(source)
+        finder.assert_not_called()
+        self.assertEqual(doc['services']['app']['volumes'][0],
+                         'special:/data')
+        self.assertIn('special', doc['volumes'])
+        self.assertTrue(notes)
+
 
 
 if __name__ == '__main__':
