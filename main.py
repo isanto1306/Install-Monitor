@@ -5773,7 +5773,7 @@ def _im_convert_local_named_volumes(doc: dict, app_name: str, base: str) -> list
                         excluded.add(volume_name)
             elif isinstance(mount, dict) and mount.get('type') == 'volume':
                 volume_name = mount.get('source')
-                if volume_name in eligible:
+                if isinstance(volume_name, str) and volume_name in eligible:
                     referenced.add(volume_name)
                     if (not isinstance(mount.get('target'), str)
                             or not mount['target'].startswith('/')
@@ -5842,7 +5842,7 @@ def _im_convert_local_named_volumes(doc: dict, app_name: str, base: str) -> list
                 mounts[i] = converted
             elif isinstance(mount, dict) and mount.get('type') == 'volume':
                 volume_name = mount.get('source')
-                if volume_name in mapped:
+                if isinstance(volume_name, str) and volume_name in mapped:
                     mount['type'] = 'bind'
                     mount['source'] = mapped[volume_name]
                     mount.pop('volume', None)
@@ -5862,13 +5862,12 @@ def _im_convert_local_named_volumes(doc: dict, app_name: str, base: str) -> list
 
 
 def _convert_volumes(data: dict, name: str, base: str) -> None:
-    """Make ZimaOS Compose preserve upstream Docker storage semantics.
+    """Resolve relative project binds without touching named Docker volumes.
 
-    Named Docker volumes are *not* NAS bind folders. Rewriting them to a path
-    removes Docker's image-content/ownership initialization and, previously,
-    broke sharing by inserting a per-service prefix. Keep the author's volume
-    declarations intact so users who prefer AppData can explicitly select
-    bind mounts with their own ownership and backup policy.
+    A separate conservative pass can map fresh, plain named volumes into
+    shared AppData binds. That pass explicitly checks for existing Docker
+    volumes and leaves external/driver-managed definitions alone. Docker's
+    volume copy-up and ownership initialization must not be assumed for binds.
 
     A relative host bind is relative to the project, not the service. Convert
     `./foo` to base/foo identically for every service, while preserving ro/rw
