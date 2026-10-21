@@ -6,9 +6,9 @@
 - [x] Vorhandene Docker-Volumes, externe oder speziell konfigurierte Volumes und unklare Mountoptionen bleiben unverändert.
 - [x] :ro/Schreibschutz, Mountziele und bestehende Host-Binds werden erhalten.
 - [x] Automatische Tests für RSSMonster mit drei Diensten, Sonderfälle und Installationsvorschau vorhanden.
-- [ ] GitHub-CI für finalen Beta-19-Commit erfolgreich abschließen.
-- [ ] GHCR-Image bauen, veröffentlichen und anonymen Pull prüfen.
-- [ ] Zima-App-Store erst nach erfolgreicher Veröffentlichung aktualisieren.
+- [x] GitHub-CI für Beta-19-Freigabecommit erfolgreich (GitHub Actions).
+- [x] GHCR-Image v0.2.62-beta.19 gebaut; anonymer Pull von Version und :beta erfolgreich geprüft.
+- [x] Zima-App-Store nach erfolgreicher Veröffentlichung aktualisiert und gh-pages Compose-Version kontrolliert.
 
 ## Sicherheit / NAS-Praxistests
 - [ ] Erstinstallation auf separatem frischen ZimaOS-NAS einschließlich Verzeichnisrechten und leerer Bind-Mounts praktisch verifizieren.
