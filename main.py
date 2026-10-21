@@ -5768,8 +5768,7 @@ def _im_convert_local_named_volumes(doc: dict, app_name: str, base: str) -> list
                     volume_name = pieces[0]
                     referenced.add(volume_name)
                     if (not pieces[1].startswith('/') or
-                            len(pieces) == 3 and any(
-                                opt not in ('ro', 'rw') for opt in pieces[2].split(','))):
+                            len(pieces) == 3 and pieces[2] not in ('ro', 'rw')):
                         excluded.add(volume_name)
             elif isinstance(mount, dict) and mount.get('type') == 'volume':
                 volume_name = mount.get('source')
@@ -7334,7 +7333,8 @@ def build_plan(p: Plan) -> dict:
     if synology_notes:
         preparation_notes.extend(_im_wordpress_dependency_cleanup(data))
     _convert_volumes(data, name, root)
-    preparation_notes.extend(_im_convert_local_named_volumes(data, name, root))
+    if p.target_system == 'zimaos':
+        preparation_notes.extend(_im_convert_local_named_volumes(data, name, root))
     if any(isinstance(vol, str) and vol.split(':', 1)[0] in (data.get('volumes') or {})
            or isinstance(vol, dict) and vol.get('type') == 'volume'
            for svc in data['services'].values() for vol in (svc.get('volumes') or [])):
