@@ -1,24 +1,25 @@
-# Freigabecheckliste v0.2.61
+# Freigabecheckliste v0.2.62-beta.19
 
-- [x] Installer und Compose verwenden dieselbe Backend-Version 0.2.61.
-- [x] Erstinstallation fordert Benutzername, Passwort und sicheres Session-Secret.
-- [x] Login-Passwort wird als PBKDF2-Hash gespeichert; Secret ist nicht im Repository.
-- [x] Alte Image-Namen, Login-Passwort-Druckausgaben und fehlendes `register_zimaos.py` entfernt.
-- [x] Lokale Docker-Registry nur an 127.0.0.1; keine Cloud-Push-Routine im Installer.
-- [x] Bestehende Container werden beim Installationsversuch nicht angetastet.
-- [x] Privater Quellcode-/Secret-Scan; public author links wie gewünscht beibehalten.
-- [ ] Neuer GitHub-Token: zuvor im privaten Originalarchiv vorhandenen PAT widerrufen/rotieren.
-- [ ] Authenticator-Secret und Anmelde-Secret gegebenenfalls rotieren.
-- [ ] Echte Erstinstallation auf separatem, frischen ZimaOS mit Docker prüfen.
-- [ ] In ZimaOS-Kachel/Store-Integration separat testen (nicht Teil von `--docker`).
-- [x] GPL v3 durch Rechteinhaber gewählt; `LICENSE` (GPL-3.0-only), Copyright und Third-Party-Hinweise ergänzt.
-- [ ] Öffentliche Git-Historie mit Secret-Scanner überprüfen; keine alten Daten committen.
-- [ ] Erst danach GitHub-Push und Beta-Tag freigeben.
+## Quellcode / automatisierte Tests
+- [x] Originalfunktionen Beta 15–18 bleiben erhalten; neue Umwandlung isoliert auf ZimaOS.
+- [x] AppData-Mounts für gewöhnliche benannte Docker-Volumes teilen dieselben Daten über alle Dienste.
+- [x] Vorhandene Docker-Volumes, externe oder speziell konfigurierte Volumes und unklare Mountoptionen bleiben unverändert.
+- [x] :ro/Schreibschutz, Mountziele und bestehende Host-Binds werden erhalten.
+- [x] Automatische Tests für RSSMonster mit drei Diensten, Sonderfälle und Installationsvorschau vorhanden.
+- [ ] GitHub-CI für finalen Beta-19-Commit erfolgreich abschließen.
+- [ ] GHCR-Image bauen, veröffentlichen und anonymen Pull prüfen.
+- [ ] Zima-App-Store erst nach erfolgreicher Veröffentlichung aktualisieren.
 
-**Hinweis:** Archiv ist ein Freigabe-**Kandidat**, keine Produktionsempfehlung. Ein Shell-/Compose-Mocktest ersetzt keinen realen Docker-Build.
+## Sicherheit / NAS-Praxistests
+- [ ] Erstinstallation auf separatem frischen ZimaOS-NAS einschließlich Verzeichnisrechten und leerer Bind-Mounts praktisch verifizieren.
+- [ ] Testanwendung mit Image-Initialdateien auf fehlendes Docker-Volume-Copy-up prüfen.
+- [ ] Vorherigen privaten GitHub-PAT gegebenenfalls widerrufen/rotieren; Authenticator-/Session-Secrets überprüfen.
+- [ ] Git-Historie separat auf möglicherweise frühere Secrets prüfen (Quellcode-Prepublish-Scan ersetzt keine Historienprüfung).
+- [ ] Native Dashboard-/Store-Integration auf einer echten ZimaOS-Instanz bestätigen.
 
-## GitHub-Repository
+## Veröffentlichung
+- [x] Lizenz GPL-3.0-only und Third-Party-Hinweise beibehalten.
+- [x] Keine Benutzer-Geheimnisse oder NAS-Zugangsdaten in Commit oder Tests.
+- [ ] Finalen Release-TAG (optional) erst nach gesonderter Freigabe anlegen.
 
-- [ ] Eigenes **öffentliches und leeres** Repository `isanto1306/Install-Monitor` anlegen (keine Auto-README oder Git-Historie importieren).
-- [ ] Nur den bereinigten Quellcode aus diesem Paket committen, keine privaten NAS-Dateien.
-- [ ] Tag `v0.2.61-beta.18` erst setzen, wenn Release-Checks bestanden und Rest-Risiken akzeptiert sind.
+**Beta-Status:** Automatische CI und GHCR-Veröffentlichung belegen keine universelle Kompatibilität von Drittanbieter-Containern. Bestehende Installationen nicht mit dem Erstinstallationsskript überschreiben.
