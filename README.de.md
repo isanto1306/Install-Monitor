@@ -56,6 +56,16 @@ python3 setup_credentials.py --output /DATA/AppData/Install-Monitor/.env
 - `docker restart install-monitor` lädt **keine** neuen Compose-Umgebungsvariablen. Bei Änderungen an `.env` müssen Container mit `docker compose up -d --force-recreate --no-build` am Projektstandort neu erstellt werden, nachdem die Konfiguration geprüft wurde.
 - Die alte Klartextvariable `IM_ADMIN_PASSWORD` wird für Bestandsinstallationen noch akzeptiert; bei Neuinstallationen den neuen Hash verwenden.
 
+## AppData-Volumes bei neuen ZimaOS-Installationen (Beta 19)
+
+Gewöhnliche, neu angelegte und von Compose verwaltete benannte Docker-Volumes werden in der ZimaOS-Vorschau automatisch als Bind-Mounts unter `/DATA/AppData/<app>/<volume>` eingetragen. Mehrere Container mit demselben Volume verwenden **denselben** NAS-Datenordner. Ein ursprünglicher `:ro`-Mount bleibt schreibgeschützt; die ursprünglichen Containerziele bleiben erhalten.
+
+Beispiel RSSMonster: `rssmonster-data` → `/DATA/AppData/rssmonster/rssmonster-data`, `rssmonster-worker-health` → `/DATA/AppData/rssmonster/rssmonster-worker-health`.
+
+**Kein automatisches Datenmigrationstool:** Existiert das Docker-Volume bereits, wird es unverändert gelassen. Externe Volumes, benutzerdefinierte Volume-Treiber und nicht unterstützte Mount-Optionen bleiben ebenfalls erhalten. Kann Docker die vorhandenen Volume-Namen nicht prüfen, wird aus Sicherheitsgründen nichts umgewandelt. Diese Umstellung gilt nur für das Zielsystem ZimaOS.
+
+**Unterschied zu Docker-Volumes:** Bind-Mounts kopieren beim ersten Start keine initialen Verzeichnisinhalte aus dem Image. Damit können bestimmte Anwendungen zusätzliche Vorbereitungen benötigen. Vor der produktiven Installation die generierte Compose-Vorschau und NAS-Verzeichnisrechte prüfen; bestehende Daten nicht ungesichert ändern.
+
 ## Installation aktualisieren
 
 Diese Anweisungen gelten nur für eine **bereits vorhandene** Installation. Vorher Compose-Konfiguration und `data/` sichern. Nicht das neue Erstinstallationsskript zur Überschreibung bestehender Container verwenden. Programmdateien gezielt ersetzen und den Container neu starten. Bei geänderten Container-/Environment-Angaben ist ein gesondert geplanter Compose-Rollout nötig.
@@ -85,4 +95,4 @@ node --check static/app.js
 
 Die Projektlinks zu PayPal, Instagram und dem GitHub-Profil bleiben wie gewünscht erhalten.
 
-**Veröffentlichungsstatus:** GitHub-Beta-Kandidat, noch nicht veröffentlicht. Ein echter Docker-/ZimaOS-Erstinstallationstest steht weiterhin aus.
+**Veröffentlichungsstatus:** Öffentliche Beta. Ein unabhängiger echter ZimaOS-Erstinstallationstest für beliebige Drittanbieter-Apps steht weiterhin aus.
