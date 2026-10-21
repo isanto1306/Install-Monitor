@@ -9317,6 +9317,34 @@ def _im_expected_shared_volume_mounts(doc: dict) -> dict[str, list[tuple[str, st
     return {key: uses for key, uses in result.items() if len({s for s, _, _ in uses}) >= 2}
 
 
+def _im_expected_shared_appdata_binds(doc: dict) -> dict[str, list[tuple[str, str, bool]]]:
+    """Require the same actual host directory for shared AppData bind mounts."""
+    app_name = str(doc.get('name') or '')
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,43}', app_name):
+        return {}
+    prefix = f'/DATA/AppData/{app_name}/'
+    used: dict[str, list[tuple[str, str, bool]]] = {}
+    for service_name, service in (doc.get('services') or {}).items():
+        if not isinstance(service, dict) or _service_setup_later(service):
+            continue
+        for item in service.get('volumes') or []:
+            if isinstance(item, str):
+                fields = item.split(':', 2)
+                if len(fields) < 2:
+                    continue
+                source, target = fields[:2]
+                ro = len(fields) == 3 and 'ro' in fields[2].split(',')
+            elif isinstance(item, dict) and item.get('type') == 'bind':
+                source, target = item.get('source'), item.get('target')
+                ro = bool(item.get('read_only'))
+            else:
+                continue
+            if isinstance(source, str) and source.startswith(prefix) and isinstance(target, str):
+                used.setdefault(source, []).append((service_name, target, ro))
+    return {path: uses for path, uses in used.items()
+            if len({service for service, _, _ in uses}) > 1}
+
+
 def _im_runtime_shared_volume_issues(doc: dict, observed: list[dict]) -> list[str]:
     """Verify *actual* bind/volume identity before claiming multi-service success.
 
@@ -9324,6 +9352,7 @@ def _im_runtime_shared_volume_issues(doc: dict, observed: list[dict]) -> list[st
     On unavailable Docker inspection fail conservatively for shared volumes.
     """
     shared = _im_expected_shared_volume_mounts(doc)
+    shared.update(_im_expected_shared_appdata_binds(doc))
     if not shared:
         return []
     by_name = {o.get('service'): o for o in observed}
@@ -9343,6 +9372,8 @@ def _im_runtime_shared_volume_issues(doc: dict, observed: list[dict]) -> list[st
             problems.append(f'Docker-Volume {volume}: Der Mount fehlt in mindestens einem Dienst.')
         elif len(paths) > 1:
             problems.append(f'Docker-Volume {volume}: Dienste verwenden unterschiedliche Host-Datenquellen; Installation nicht konsistent.')
+        elif volume.startswith('/DATA/AppData/') and paths != {volume}:
+            problems.append(f'AppData-Mount {volume}: Tatsächlicher Docker-Hostpfad stimmt nicht mit der Vorschau überein.')
         for service, target, read_only in uses:
             observed_rw = actual[service].get(target, (None, None))[1]
             if observed_rw is not None and bool(observed_rw) == read_only:
