@@ -1,6 +1,6 @@
 # Install Monitor
 
-**v0.2.61 Beta 18 – Public beta · GPL v3**
+**v0.2.62 Beta 19 – Public beta · GPL v3**
 
 Install Monitor is a self-hosted, dark-mode application for inspecting and configuring Docker images, repositories, and Compose projects for **ZimaOS** and compatible Linux hosts. It guides users through source inspection, storage paths, ports, permissions, resource settings, and a reviewed installation process.
 
@@ -48,6 +48,14 @@ sh install.sh --docker
 Open `http://<YOUR-NAS-IP>:9012` **within your trusted LAN** to log in with the username and password you just configured. For remote access, use HTTPS/VPN.
 
 This Docker deployment does **not** automatically create a native ZimaOS dashboard tile. The native ZimaOS app registration path is not implemented in this beta. A genuine first-run installation on a clean ZimaOS system and Docker image build must be validated before a production recommendation.
+
+## Named volumes on ZimaOS (Beta 19)
+
+For **new ZimaOS installations**, ordinary Compose-managed named volumes can be mapped automatically to shared `/DATA/AppData/<app>/<volume>` bind folders. Services that share a source volume keep using the same host directory. Read-only mounts remain read-only.
+
+Existing Docker volumes are **not** migrated or overwritten. External volumes, custom driver options and unsupported mount modes are left unchanged. If the host Docker volume list is unavailable, no automatic conversion takes place. This behavior does not apply when the target is generic Docker.
+
+**Important:** Bind mounts do not inherit pre-populated directory contents from the image as freshly created Docker named volumes do. Some images require a manual first-run check for initialization files, data and ownership. Carefully review the final Compose preview and do not replace existing installations without backups.
 
 ## Existing Install Monitor installation
 

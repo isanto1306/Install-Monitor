@@ -1,10 +1,9 @@
 name: Verify anonymous beta image pull
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/verify-public-image.yml'
+  workflow_run:
+    workflows: ["Publish Install Monitor beta image"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +11,7 @@ permissions:
 
 jobs:
   anonymous-pull:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Pull as an anonymous user
@@ -19,11 +19,13 @@ jobs:
           set -eu
           docker logout ghcr.io >/dev/null 2>&1 || true
           docker pull ghcr.io/isanto1306/install-monitor:beta
-          docker pull ghcr.io/isanto1306/install-monitor:0.2.56-beta.3
-      - name: Inspect published image
+          docker pull ghcr.io/isanto1306/install-monitor:0.2.62-beta.19
+      - name: Verify beta and release image match
         run: |
+          set -eu
           beta=$(docker image inspect ghcr.io/isanto1306/install-monitor:beta --format '{{.Id}}')
-          release=$(docker image inspect ghcr.io/isanto1306/install-monitor:0.2.56-beta.3 --format '{{.Id}}')
-          echo "Beta image and Beta 2 immutable tag"
+          release=$(docker image inspect ghcr.io/isanto1306/install-monitor:0.2.62-beta.19 --format '{{.Id}}')
           test "$beta" = "$release"
-          docker image inspect ghcr.io/isanto1306/install-monitor:0.2.56-beta.3 --format '{{index .Config.Labels "org.opencontainers.image.version"}}' | grep -Fx '0.2.56-beta.3'
+          docker image inspect ghcr.io/isanto1306/install-monitor:0.2.62-beta.19 \
+            --format '{{index .Config.Labels "org.opencontainers.image.version"}}' \
+            | grep -Fx '0.2.62-beta.19'

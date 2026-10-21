@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.61-beta.18"
+VERSION = "0.2.62-beta.19"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -5717,14 +5717,156 @@ def _im_resolve_zimaos_appid_binds(doc: dict, base: str) -> list[str]:
              + ', '.join(sorted(set(changed))) + '.'] if changed else [])
 
 
-def _convert_volumes(data: dict, name: str, base: str) -> None:
-    """Make ZimaOS Compose preserve upstream Docker storage semantics.
+def _im_existing_docker_volume_names() -> set[str] | None:
+    """Read the host's volume names once; fail closed if Docker is unavailable."""
+    try:
+        result = subprocess.run(
+            ['docker', 'volume', 'ls', '--format', '{{.Name}}'],
+            capture_output=True, text=True, check=True, timeout=8,
+        )
+        return set(result.stdout.splitlines())
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
 
-    Named Docker volumes are *not* NAS bind folders. Rewriting them to a path
-    removes Docker's image-content/ownership initialization and, previously,
-    broke sharing by inserting a per-service prefix. Keep the author's volume
-    declarations intact so users who prefer AppData can explicitly select
-    bind mounts with their own ownership and backup policy.
+
+def _im_convert_local_named_volumes(doc: dict, app_name: str, base: str) -> list[str]:
+    """Convert plain, unused named volumes into shared ZimaOS AppData binds.
+
+    Only fresh, ordinary Compose-managed volumes are eligible. External and
+    driver-configured volumes are preserved. If Docker cannot confirm that the
+    source volume is absent, it is preserved as well to prevent accidental data
+    loss. The original Compose services are already validated by safe_yaml().
+    """
+    declared = doc.get('volumes') or {}
+    if not isinstance(declared, dict) or not declared:
+        return []
+    app_root = f'/DATA/AppData/{app_name}'
+    if base != app_root and not base.startswith(app_root + '/'):
+        return ['Benannte Docker-Volumes nicht umgestellt: Gewählter Datenordner '
+                'liegt außerhalb des app-eigenen /DATA/AppData-Bereichs.']
+    notes: list[str] = []
+    eligible: set[str] = set()
+    for volume_name, config in declared.items():
+        if not isinstance(volume_name, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}', volume_name):
+            continue
+        if config is None or config == {}:
+            eligible.add(volume_name)
+        else:
+            notes.append(f'Docker-Volume {volume_name}: Spezielle oder externe '
+                         'Volume-Konfiguration wird unverändert beibehalten.')
+    if not eligible:
+        return notes
+
+    # Convert a volume only when EVERY reference can safely become a bind.
+    referenced: set[str] = set()
+    excluded: set[str] = set()
+    for service in doc['services'].values():
+        for mount in service.get('volumes') or []:
+            if isinstance(mount, str):
+                pieces = mount.split(':', 2)
+                if len(pieces) >= 2 and pieces[0] in eligible:
+                    volume_name = pieces[0]
+                    referenced.add(volume_name)
+                    if (not pieces[1].startswith('/') or
+                            len(pieces) == 3 and pieces[2] not in ('ro', 'rw')):
+                        excluded.add(volume_name)
+            elif isinstance(mount, dict) and mount.get('type') == 'volume':
+                volume_name = mount.get('source')
+                if isinstance(volume_name, str) and volume_name in eligible:
+                    referenced.add(volume_name)
+                    if (not isinstance(mount.get('target'), str)
+                            or not mount['target'].startswith('/')
+                            or mount.get('volume') not in (None, {})):
+                        excluded.add(volume_name)
+    eligible = (eligible & referenced) - excluded
+    for volume_name in sorted(excluded):
+        notes.append(f'Docker-Volume {volume_name}: Spezielle Mount-Optionen '
+                     'werden nicht automatisch in einen Bind-Mount umgewandelt.')
+    if not eligible:
+        return notes
+
+    existing = _im_existing_docker_volume_names()
+    if existing is None:
+        notes.append('Docker-Volumes konnten auf dem NAS nicht überprüft werden. '
+                     'Keine automatische AppData-Umwandlung ohne Datenprüfung.')
+        return notes
+
+    # An explicit existing bind must not silently share a directory with a
+    # different volume. This includes long-form bind declarations.
+    reserved: set[str] = set()
+    for service in doc['services'].values():
+        for mount in service.get('volumes') or []:
+            if isinstance(mount, str):
+                path = mount.split(':', 1)[0]
+                if path.startswith('/'):
+                    reserved.add(os.path.normpath(path))
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                path = mount.get('source')
+                if isinstance(path, str) and path.startswith('/'):
+                    reserved.add(os.path.normpath(path))
+
+    mapped: dict[str, str] = {}
+    for volume_name in sorted(eligible):
+        # Compose's standard local name and the unprefixed Docker name are both
+        # checked; we never migrate pre-existing data without consent.
+        if volume_name in existing or f'{app_name}_{volume_name}' in existing:
+            notes.append(f'Docker-Volume {volume_name} existiert bereits auf dem NAS. '
+                         'Bestehende Daten werden nicht automatisch ersetzt oder migriert.')
+            continue
+        path = base.rstrip('/') + '/' + volume_name
+        suffix = 2
+        while path in reserved:
+            path = base.rstrip('/') + '/' + volume_name + f'-{suffix}'
+            suffix += 1
+        if len(path) > 500:
+            notes.append(f'Docker-Volume {volume_name}: AppData-Pfad ist zu lang.')
+            continue
+        reserved.add(path)
+        mapped[volume_name] = path
+
+    if not mapped:
+        return notes
+
+    for service in doc['services'].values():
+        mounts = service.get('volumes') or []
+        for i, mount in enumerate(mounts):
+            if isinstance(mount, str):
+                pieces = mount.split(':', 2)
+                if len(pieces) < 2 or pieces[0] not in mapped:
+                    continue
+                converted = {'type': 'bind', 'source': mapped[pieces[0]],
+                             'target': pieces[1]}
+                if len(pieces) == 3 and pieces[2] == 'ro':
+                    converted['read_only'] = True
+                mounts[i] = converted
+            elif isinstance(mount, dict) and mount.get('type') == 'volume':
+                volume_name = mount.get('source')
+                if isinstance(volume_name, str) and volume_name in mapped:
+                    mount['type'] = 'bind'
+                    mount['source'] = mapped[volume_name]
+                    mount.pop('volume', None)
+    # Converted names must no longer be declared as Docker volumes. Leave all
+    # unconverted declarations (including external/driver_opts) unchanged.
+    for volume_name in mapped:
+        declared.pop(volume_name, None)
+    if not declared:
+        doc.pop('volumes', None)
+    for volume_name, path in mapped.items():
+        notes.append(f'Docker-Volume {volume_name} automatisch als gemeinsamer '
+                     f'ZimaOS-AppData-Ordner zugeordnet: {path}.')
+    notes.append('Bei AppData-Bind-Mounts kopiert Docker keinen vorhandenen '
+                 'Image-Inhalt wie bei neuen Docker-Volumes. Für bestehende '
+                 'Installationen müssen Daten und Zugriffsrechte geprüft werden.')
+    return notes
+
+
+def _convert_volumes(data: dict, name: str, base: str) -> None:
+    """Resolve relative project binds without touching named Docker volumes.
+
+    A separate conservative pass can map fresh, plain named volumes into
+    shared AppData binds. That pass explicitly checks for existing Docker
+    volumes and leaves external/driver-managed definitions alone. Docker's
+    volume copy-up and ownership initialization must not be assumed for binds.
 
     A relative host bind is relative to the project, not the service. Convert
     `./foo` to base/foo identically for every service, while preserving ro/rw
@@ -7191,6 +7333,8 @@ def build_plan(p: Plan) -> dict:
     if synology_notes:
         preparation_notes.extend(_im_wordpress_dependency_cleanup(data))
     _convert_volumes(data, name, root)
+    if p.target_system == 'zimaos':
+        preparation_notes.extend(_im_convert_local_named_volumes(data, name, root))
     if any(isinstance(vol, str) and vol.split(':', 1)[0] in (data.get('volumes') or {})
            or isinstance(vol, dict) and vol.get('type') == 'volume'
            for svc in data['services'].values() for vol in (svc.get('volumes') or [])):
@@ -8737,8 +8881,8 @@ _FILE_MOUNT_SUFFIXES = (".env", ".json", ".yml", ".yaml", ".toml", ".ini", ".con
 def _compose_host_bind_sources(doc: dict) -> list[tuple[str, bool]]:
     """Return bind-host paths and whether the source is known to be a directory.
 
-    Keep upstream named Docker volumes without driver_opts untouched; their
-    content is managed by Docker, not this preparer.
+    Unconverted named Docker volumes are managed by Docker; converted AppData
+    binds are prepared through the existing symlink-safe host helper.
     """
     result: list[tuple[str, bool]] = []
     volumes = doc.get('volumes') or {}
@@ -9172,6 +9316,34 @@ def _im_expected_shared_volume_mounts(doc: dict) -> dict[str, list[tuple[str, st
     return {key: uses for key, uses in result.items() if len({s for s, _, _ in uses}) >= 2}
 
 
+def _im_expected_shared_appdata_binds(doc: dict) -> dict[str, list[tuple[str, str, bool]]]:
+    """Require the same actual host directory for shared AppData bind mounts."""
+    app_name = str(doc.get('name') or '')
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,43}', app_name):
+        return {}
+    prefix = f'/DATA/AppData/{app_name}/'
+    used: dict[str, list[tuple[str, str, bool]]] = {}
+    for service_name, service in (doc.get('services') or {}).items():
+        if not isinstance(service, dict) or _service_setup_later(service):
+            continue
+        for item in service.get('volumes') or []:
+            if isinstance(item, str):
+                fields = item.split(':', 2)
+                if len(fields) < 2:
+                    continue
+                source, target = fields[:2]
+                ro = len(fields) == 3 and 'ro' in fields[2].split(',')
+            elif isinstance(item, dict) and item.get('type') == 'bind':
+                source, target = item.get('source'), item.get('target')
+                ro = bool(item.get('read_only'))
+            else:
+                continue
+            if isinstance(source, str) and source.startswith(prefix) and isinstance(target, str):
+                used.setdefault(source, []).append((service_name, target, ro))
+    return {path: uses for path, uses in used.items()
+            if len({service for service, _, _ in uses}) > 1}
+
+
 def _im_runtime_shared_volume_issues(doc: dict, observed: list[dict]) -> list[str]:
     """Verify *actual* bind/volume identity before claiming multi-service success.
 
@@ -9179,6 +9351,7 @@ def _im_runtime_shared_volume_issues(doc: dict, observed: list[dict]) -> list[st
     On unavailable Docker inspection fail conservatively for shared volumes.
     """
     shared = _im_expected_shared_volume_mounts(doc)
+    shared.update(_im_expected_shared_appdata_binds(doc))
     if not shared:
         return []
     by_name = {o.get('service'): o for o in observed}
@@ -9198,6 +9371,8 @@ def _im_runtime_shared_volume_issues(doc: dict, observed: list[dict]) -> list[st
             problems.append(f'Docker-Volume {volume}: Der Mount fehlt in mindestens einem Dienst.')
         elif len(paths) > 1:
             problems.append(f'Docker-Volume {volume}: Dienste verwenden unterschiedliche Host-Datenquellen; Installation nicht konsistent.')
+        elif volume.startswith('/DATA/AppData/') and paths != {volume}:
+            problems.append(f'AppData-Mount {volume}: Tatsächlicher Docker-Hostpfad stimmt nicht mit der Vorschau überein.')
         for service, target, read_only in uses:
             observed_rw = actual[service].get(target, (None, None))[1]
             if observed_rw is not None and bool(observed_rw) == read_only:
