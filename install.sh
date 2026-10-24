@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
-# Install Monitor v0.2.62-beta.19 — first-time Docker Compose installation on ZimaOS/Linux.
+# Install Monitor v0.2.63-beta.20 — first-time Docker Compose installation on ZimaOS/Linux.
 # Does not delete or upgrade any existing installation. Never prints secrets.
 set -eu
 umask 077
@@ -51,7 +51,7 @@ PY
 }
 
 if [ "$MODE" = '--check' ]; then
-    info 'Install Monitor v0.2.62-beta.19 – read-only Vorabprüfung'
+    info 'Install Monitor v0.2.63-beta.20 – read-only Vorabprüfung'
     if [ -f "$ENV_FILE" ]; then
         check_credentials
         docker compose -f docker-compose.yml config --quiet || fail 'Compose-Konfiguration ist ungültig.'
@@ -99,15 +99,15 @@ mkdir -p "$STATE_ROOT/data" "$STATE_ROOT/registry" || fail 'Laufzeitordner konnt
 chmod 700 "$STATE_ROOT/data" "$STATE_ROOT/registry" || fail 'Laufzeitordner-Rechte konnten nicht gesetzt werden.'
 # Never print config expansion: it may contain sensitive environment values.
 docker compose -f docker-compose.yml config --quiet || fail 'Compose-Konfiguration ist ungültig.'
-info 'Baue Install Monitor v0.2.62-beta.19 lokal (kein Push zu Docker Hub/GitHub) ...'
+info 'Baue Install Monitor v0.2.63-beta.20 lokal (kein Push zu Docker Hub/GitHub) ...'
 docker compose -f docker-compose.yml build || fail 'Image-Build fehlgeschlagen; es wurde kein alter Container ersetzt.'
 info 'Starte die zwei Compose-Services ...'
 docker compose -f docker-compose.yml up -d --no-build || fail 'Containerstart fehlgeschlagen. Logs prüfen.'
 # /api/session is intentionally public but exposes no credentials.
 n=0
 while [ "$n" -lt 30 ]; do
-    if docker exec install-monitor python -c 'import json,urllib.request; d=json.load(urllib.request.urlopen("http://127.0.0.1:9012/api/session",timeout=2)); assert d.get("version")=="0.2.62-beta.19"' >/dev/null 2>&1; then
-        info 'ERFOLG: Install Monitor v0.2.62-beta.19 läuft. Öffne http://<NAS-IP>:9012 im Heimnetz.'
+    if docker exec install-monitor python -c 'import json,urllib.request; d=json.load(urllib.request.urlopen("http://127.0.0.1:9012/api/session",timeout=2)); assert d.get("version")=="0.2.63-beta.20"' >/dev/null 2>&1; then
+        info 'ERFOLG: Install Monitor v0.2.63-beta.20 läuft. Öffne http://<NAS-IP>:9012 im Heimnetz.'
         info 'Anmeldung: der zuvor festgelegte Benutzername und das Passwort.'
         info 'Docker-Compose-Installation bedeutet noch keine automatische ZimaOS-Dashboard-Kachel.'
         exit 0

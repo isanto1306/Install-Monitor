@@ -38,7 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
-VERSION = "0.2.62-beta.19"
+VERSION = "0.2.63-beta.20"
 STATIC = Path(__file__).parent / "static"
 # Existing users without IM_ADMIN_USERNAME may continue signing in as "admin".
 # New installations should explicitly configure all three credentials.
@@ -2278,6 +2278,29 @@ x-casaos:
   main: homeassistant
   port_map: '8123'
 """,
+    # Official publisher instructions: https://headplane.net/install/docker
+    # This replaces the repository's root compose.yaml, which explicitly says
+    # it is only a developer stack and does not deploy Headplane itself.
+    "tale/headplane": """name: headplane
+services:
+  headplane:
+    image: ghcr.io/tale/headplane:latest
+    container_name: headplane
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/config.yaml
+        target: /etc/headplane/config.yaml
+        read_only: true
+      - type: bind
+        source: /DATA/AppData/$AppID/data
+        target: /var/lib/headplane
+x-casaos:
+  main: headplane
+  port_map: "3000"
+""",
     "music-assistant/server": """name: music-assistant-server
 services:
   music-assistant-server:
@@ -2411,6 +2434,15 @@ def _publisher_template(owner: str, repo: str) -> tuple[str, str, list[str]] | N
     content = OFFICIAL_REPO_TEMPLATES.get(key)
     if content is None:
         return None
+    if key == 'tale/headplane':
+        return content, 'https://headplane.net/install/docker', [
+            'Die Root-Compose von tale/headplane ist ausdrücklich nur für die Entwicklung vorgesehen und enthält keine Headplane-Anwendung. Offizielle Docker-Installationsvorlage verwendet.',
+            'Headplane benötigt einen bereits laufenden Headscale-Server und eine echte Konfigurationsdatei config.yaml. Keine unbekannten Headscale-Adressen oder Cookie-Secrets automatisch erfinden.',
+            'config.yaml nach der offiziellen Anleitung erstellen: headscale.url auf den vorhandenen Headscale-Server setzen, server.cookie_secret mit genau 32 zufälligen Zeichen vergeben.',
+            'Das Verzeichnis /DATA/AppData/headplane/data dient den persistenten Headplane-Daten. Datei-Mount und Zugriffsrechte werden vor Installation geprüft.',
+            'Der Webdienst liegt innerhalb des Containers auf Port 3000; den freien NAS-Host-Port in der Konfiguration prüfen. Zugriff über /admin.',
+            'Keine Caddy-Entwicklungsumgebung, kein zweiter Headscale-Container und keine Testzertifikate werden automatisch installiert.',
+        ]
     if key == 'home-assistant/core':
         return content, 'https://www.home-assistant.io/installation/linux/', [
             'Keine geeignete Installations-Compose im Quellcode-Repository. '
@@ -3689,6 +3721,12 @@ def _discover_github_repository(parts: list[str]) -> tuple[str, str, list[str]]:
     # The upstream installation instructions live in the GitHub wiki, not
     # necessarily in a checked-in compose.yaml. Avoid a pointless unauthenticated
     # GitHub API call for this explicitly documented publisher integration.
+    if owner.lower() == 'tale' and repo.lower() == 'headplane':
+        # The repository root compose.yaml starts with:
+        # 'THIS IS A DEVELOPER CONFIGURATION FILE' / 'NOT ... DEPLOY'.
+        # Prefer the official production Docker documentation (no Caddy
+        # developer proxy, local development headscale, or testing certs).
+        return _publisher_template(owner, repo)
     if owner.lower() == 'gtsteffaniak' and repo.lower() == 'filebrowser':
         return _filebrowser_publisher_draft()
     # This is a verified publisher-image deployment, not a generic fallback:
@@ -5860,6 +5898,55 @@ def _im_convert_local_named_volumes(doc: dict, app_name: str, base: str) -> list
     return notes
 
 
+def _im_map_relative_config_file_mounts(doc: dict, root: str) -> list[str]:
+    """Map safe relative file *paths* to AppData without creating file data.
+
+    Resolves the Compose project directory consistently for every service.
+    An absolute bind does NOT make the target file exist: the separate NAS
+    regular-file probe remains mandatory, so neither a missing config nor an
+    unexpected symlink can be approved or silently created as a directory.
+    """
+    mapped: dict[str, str] = {}
+    for svc in doc['services'].values():
+        if not isinstance(svc, dict):
+            continue
+        for i, mount in enumerate(svc.get('volumes') or []):
+            if isinstance(mount, str):
+                chunks = mount.split(':', 2)
+                if len(chunks) < 2:
+                    continue
+                original, target = chunks[:2]
+                if (not _im_file_mount_expected(original, target)
+                        or not original.startswith('./')):
+                    continue
+                candidate = _im_safe_relative_bind(original, root)
+                if not candidate:
+                    continue
+                chunks[0] = candidate
+                svc['volumes'][i] = ':'.join(chunks)
+                mapped[original] = candidate
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                original, target = mount.get('source'), mount.get('target')
+                if (not isinstance(original, str) or not isinstance(target, str)
+                        or not original.startswith('./')
+                        or not _im_file_mount_expected(original, target)
+                        or (isinstance(mount.get('bind'), dict)
+                            and mount['bind'].get('create_host_path') is True)):
+                    continue
+                candidate = _im_safe_relative_bind(original, root)
+                if not candidate:
+                    continue
+                mount['source'] = candidate
+                mapped[original] = candidate
+    return [
+        'Datei-Mount ' + source + ' → ' + mapped[source] +
+        ' als ZimaOS-NAS-Pfad zugeordnet. Die echte Konfigurationsdatei '
+        'muss dort vor der Installation als reguläre Datei existieren; '
+        'es wurde keine Datei erzeugt oder aus GitHub importiert.'
+        for source in sorted(mapped)
+    ]
+
+
 def _convert_volumes(data: dict, name: str, base: str) -> None:
     """Resolve relative project binds without touching named Docker volumes.
 
@@ -5870,8 +5957,9 @@ def _convert_volumes(data: dict, name: str, base: str) -> None:
 
     A relative host bind is relative to the project, not the service. Convert
     `./foo` to base/foo identically for every service, while preserving ro/rw
-    flags. File mounts and parent traversals remain unchanged and are blocked
-    by preflight until the user supplies a real absolute NAS path.
+    flags. File mounts remain unchanged in this first pass and are then
+    conservatively mapped to absolute NAS paths for ZimaOS only; the mandatory
+    regular-file preflight still blocks missing files. Parent traversals stay blocked.
     """
     original = data.get('volumes')
     if original is not None and not isinstance(original, dict):
@@ -7334,6 +7422,7 @@ def build_plan(p: Plan) -> dict:
         preparation_notes.extend(_im_wordpress_dependency_cleanup(data))
     _convert_volumes(data, name, root)
     if p.target_system == 'zimaos':
+        preparation_notes.extend(_im_map_relative_config_file_mounts(data, root))
         preparation_notes.extend(_im_convert_local_named_volumes(data, name, root))
     if any(isinstance(vol, str) and vol.split(':', 1)[0] in (data.get('volumes') or {})
            or isinstance(vol, dict) and vol.get('type') == 'volume'
@@ -8671,6 +8760,28 @@ def _analyze_source_payload(payload: Source):
         content, var_notes = _resolve_compose_variables(normalized)
     else:
         raise HTTPException(400, "Unbekannte Quelle.")
+    # The upstream Headplane root Compose is a development-only stack.
+    # Detect its actual structure, since YAML variable expansion deliberately
+    # drops comments such as "NOT ... SOMETHING YOU DEPLOY".
+    if payload.kind in ('url', 'yaml'):
+        preliminary = safe_yaml(content)
+        networks = preliminary.get('networks') or {}
+        services = preliminary['services']
+        caddy = services.get('caddy', {})
+        caddy_mounts = caddy.get('volumes') or [] if isinstance(caddy, dict) else []
+        if (isinstance(networks, dict)
+                and 'headplane-dev' in networks
+                and 'caddy' in services and 'headscale' in services
+                and 'headplane' not in services
+                and any(isinstance(mount, str)
+                        and mount.startswith('./Caddyfile:/etc/caddy/Caddyfile')
+                        for mount in caddy_mounts)):
+            raise HTTPException(422,
+                'Headplane: Diese Compose-Datei ist laut Hersteller nur für die Entwicklung. '
+                'Sie enthält Caddy und einen Test-Headscale statt des Headplane-Produktivdienstes. '
+                'Bitte https://github.com/tale/headplane als Repository-Quelle verwenden; '
+                'Install Monitor lädt dann die offizielle Docker-Vorlage. '
+                'Eine gültige config.yaml und ein Headscale-Server bleiben erforderlich.')
     doc = safe_yaml(content)
     image_suggestions: list[dict] = []
     if payload.kind == "url" or (payload.kind == "image" and project_url):

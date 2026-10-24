@@ -1,6 +1,6 @@
 # Install Monitor
 
-**v0.2.62 Beta 19 – Public beta · GPL v3**
+**v0.2.63 Beta 20 – Public beta · GPL v3**
 
 Install Monitor is a self-hosted, dark-mode application for inspecting and configuring Docker images, repositories, and Compose projects for **ZimaOS** and compatible Linux hosts. It guides users through source inspection, storage paths, ports, permissions, resource settings, and a reviewed installation process.
 
@@ -48,6 +48,12 @@ sh install.sh --docker
 Open `http://<YOUR-NAS-IP>:9012` **within your trusted LAN** to log in with the username and password you just configured. For remote access, use HTTPS/VPN.
 
 This Docker deployment does **not** automatically create a native ZimaOS dashboard tile. The native ZimaOS app registration path is not implemented in this beta. A genuine first-run installation on a clean ZimaOS system and Docker image build must be validated before a production recommendation.
+
+## Headplane and relative configuration file mounts (Beta 20)
+
+The repository URL `https://github.com/tale/headplane` selects the publisher's Docker deployment rather than the developer-only root Compose with Caddy and a test Headscale instance. A working existing Headscale server and a real `config.yaml` are prerequisites.
+
+For ZimaOS, safe relative file binds such as `./config.yaml:/etc/headplane/config.yaml` are resolved under the app's AppData folder. The file must **actually exist** on the NAS; Install Monitor never creates dummy files or pulls unreviewed sibling files from GitHub. File-type checks and blocking preflight remain in force.
 
 ## Named volumes on ZimaOS (Beta 19)
 

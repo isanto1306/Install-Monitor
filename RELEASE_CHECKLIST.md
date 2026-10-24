@@ -1,25 +1,24 @@
-# Freigabecheckliste v0.2.62-beta.19
+# Freigabecheckliste v0.2.63-beta.20
 
-## Quellcode / automatisierte Tests
-- [x] Originalfunktionen Beta 15–18 bleiben erhalten; neue Umwandlung isoliert auf ZimaOS.
-- [x] AppData-Mounts für gewöhnliche benannte Docker-Volumes teilen dieselben Daten über alle Dienste.
-- [x] Vorhandene Docker-Volumes, externe oder speziell konfigurierte Volumes und unklare Mountoptionen bleiben unverändert.
-- [x] :ro/Schreibschutz, Mountziele und bestehende Host-Binds werden erhalten.
-- [x] Automatische Tests für RSSMonster mit drei Diensten, Sonderfälle und Installationsvorschau vorhanden.
-- [x] GitHub-CI für Beta-19-Freigabecommit erfolgreich (GitHub Actions).
-- [x] GHCR-Image v0.2.62-beta.19 gebaut; anonymer Pull von Version und :beta erfolgreich geprüft.
-- [x] Zima-App-Store nach erfolgreicher Veröffentlichung aktualisiert und gh-pages Compose-Version kontrolliert.
+## Funktionsumfang
+- [x] Headplane-Repository verweist auf die offizielle Docker-Installationsvariante statt auf die Entwickler-Compose.
+- [x] Direkter Import der eindeutig erkennbaren Headplane-Entwickler-Compose wird mit Erklärung blockiert.
+- [x] Sichere relative Konfigurationsdatei-Mounts werden für ZimaOS auf absolute AppData-Pfade abgebildet.
+- [x] Datei-Ziel, Schreibschutz und gemeinsame Dateiquelle über mehrere Services bleiben erhalten.
+- [x] Keine automatische Erstellung, Übernahme oder Überschreibung der Datei config.yaml.
+- [x] Ursprüngliche Dateitypprüfung und Installationssperren bleiben aktiv.
+- [x] Unsichere relative Traversal-Pfade werden nicht automatisch umgesetzt.
+- [x] Beta 19 AppData-Volume-Konvertierung wird nicht verändert.
 
-## Sicherheit / NAS-Praxistests
-- [ ] Erstinstallation auf separatem frischen ZimaOS-NAS einschließlich Verzeichnisrechten und leerer Bind-Mounts praktisch verifizieren.
-- [ ] Testanwendung mit Image-Initialdateien auf fehlendes Docker-Volume-Copy-up prüfen.
-- [ ] Vorherigen privaten GitHub-PAT gegebenenfalls widerrufen/rotieren; Authenticator-/Session-Secrets überprüfen.
-- [ ] Git-Historie separat auf möglicherweise frühere Secrets prüfen (Quellcode-Prepublish-Scan ersetzt keine Historienprüfung).
-- [ ] Native Dashboard-/Store-Integration auf einer echten ZimaOS-Instanz bestätigen.
+## Veröffentlichung / CI
+- [ ] Source Checks am finalen Freigabecommit erfolgreich.
+- [ ] GHCR Version 0.2.63-beta.20 gebaut, und öffentlicher Pull mit Versionstag und :beta bestätigt.
+- [ ] ZimaOS App Store mit bestätigtem GHCR-Image aktualisiert und erzeugte gh-pages Compose kontrolliert.
 
-## Veröffentlichung
-- [x] Lizenz GPL-3.0-only und Third-Party-Hinweise beibehalten.
-- [x] Keine Benutzer-Geheimnisse oder NAS-Zugangsdaten in Commit oder Tests.
-- [ ] Finalen Release-TAG (optional) erst nach gesonderter Freigabe anlegen.
+## Praxis / Sicherheit
+- [ ] Erstinstallation von Headplane mit gültiger config.yaml und laufendem Headscale auf einem echten ZimaOS-NAS verifiziert.
+- [ ] Konfigurationsdatei vor der Installation auf Host-Dateityp und passende Zugriffsrechte prüfen.
+- [ ] Weitere reale Compose-Projekte auf relative Datei-Mounts prüfen.
+- [ ] Vorherige noch offene Security-Checkpunkte (z. B. Tokenrotation) separat abschließen.
 
-**Beta-Status:** Automatische CI und GHCR-Veröffentlichung belegen keine universelle Kompatibilität von Drittanbieter-Containern. Bestehende Installationen nicht mit dem Erstinstallationsskript überschreiben.
+Diese Sicherheitschecks werden nicht übersprungen, um die Installation zu erzwingen.
