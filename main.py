@@ -290,6 +290,12 @@ class Install(BaseModel):
     target_system: str = Field(default="zimaos", pattern=r"^(zimaos|casaos|docker)$")
 
 
+class HeadplaneConfigSetup(BaseModel):
+    compose: str = Field(min_length=1, max_length=524288)
+    headscale_url: str = Field(min_length=8, max_length=500)
+    base_url: str = Field(min_length=8, max_length=500)
+
+
 class SourceImageReplacement(BaseModel):
     source: str = Field(min_length=1, max_length=524288)
     service: str = Field(min_length=1, max_length=70)
@@ -9054,6 +9060,168 @@ def _managed_host_directories(doc: dict, app_name: str) -> list[str]:
 
 
 # This script runs only in a disposable, network-isolated helper container.
+# A one-purpose, isolated writer for the Headplane config file.  The config
+# content travels on stdin, not in command-line arguments, logs or environment.
+# Existing files, symlinks, and directories are never overwritten or followed.
+_IM_HEADPLANE_CONFIG_WRITER = r'''
+import json, os, stat, sys
+from pathlib import Path
+payload=json.load(sys.stdin)
+app=payload['app']
+if not isinstance(app,str) or not __import__('re').fullmatch(r'[a-z0-9][a-z0-9-]{2,43}',app):
+    raise RuntimeError('invalid app')
+root=Path('/im-appdata')
+current=root
+for part in (app,):
+    current=current / part
+    try:
+        node=current.lstat()
+    except FileNotFoundError:
+        current.mkdir(mode=0o755)
+        node=current.lstat()
+    if not stat.S_ISDIR(node.st_mode) or stat.S_ISLNK(node.st_mode):
+        raise RuntimeError('unsafe app directory')
+target=current / 'config.yaml'
+try:
+    existing=target.lstat()
+except FileNotFoundError:
+    existing=None
+if existing is not None:
+    if stat.S_ISREG(existing.st_mode) and not stat.S_ISLNK(existing.st_mode):
+        raise RuntimeError('config file already exists; refusing to overwrite')
+    raise RuntimeError('unsafe config file path')
+flags=os.O_WRONLY|os.O_CREAT|os.O_EXCL
+if hasattr(os,'O_NOFOLLOW'):
+    flags |= os.O_NOFOLLOW
+fd=os.open(target,flags,0o644)
+try:
+    with os.fdopen(fd,'w',encoding='utf-8') as out:
+        out.write(payload['content'])
+        out.flush()
+        os.fsync(out.fileno())
+except Exception:
+    target.unlink(missing_ok=True)
+    raise
+info=target.lstat()
+if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+    raise RuntimeError('config file not regular')
+print(json.dumps({'created':True,'path':'/DATA/AppData/'+app+'/config.yaml'}))
+'''
+
+
+def _im_headplane_config_service(doc: dict) -> tuple[str, str]:
+    """Allow only an exact app-owned config bind for Headplane's real image."""
+    name = str(doc.get('name') or '')
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{2,43}', name):
+        raise HTTPException(400, 'Headplane: Ungültiger ZimaOS-App-Name.')
+    services = doc.get('services') or {}
+    candidates = [
+        svc for svc in services.values() if isinstance(svc, dict)
+        and re.fullmatch(r'ghcr\.io/tale/headplane(?::[A-Za-z0-9._-]+)?', str(svc.get('image') or ''), re.I)
+    ]
+    if len(candidates) != 1:
+        raise HTTPException(400, 'Headplane: Eindeutiger offizieller Headplane-Dienst fehlt.')
+    required = f'/DATA/AppData/{name}/config.yaml'
+    service = candidates[0]
+    found = False
+    for mount in service.get('volumes') or []:
+        if isinstance(mount, str):
+            parts = mount.split(':', 2)
+            src, dest = (parts[0], parts[1]) if len(parts) >= 2 else ('', '')
+        elif isinstance(mount, dict) and mount.get('type') == 'bind':
+            src, dest = mount.get('source'), mount.get('target')
+        else:
+            continue
+        if dest == '/etc/headplane/config.yaml':
+            if src != required:
+                raise HTTPException(400, 'Headplane: Zuerst den Datei-Mount auf '
+                                    + required + ' einstellen.')
+            found = True
+    if not found:
+        raise HTTPException(400, 'Headplane: Konfigurationsdatei ist nicht im Compose eingebunden.')
+    return name, required
+
+
+def _im_headplane_url(raw: str, what: str) -> str:
+    """Reject credentials, opaque URLs, paths and placeholders."""
+    value = raw.strip().rstrip('/')
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        hostname = parsed.hostname or ''
+        port = parsed.port
+    except ValueError:
+        raise HTTPException(400, f'{what}: Ungültige URL.')
+    if (parsed.scheme not in ('http', 'https') or not hostname
+            or any(ord(c) < 33 for c in value)
+            or parsed.username is not None or parsed.password is not None
+            or parsed.query or parsed.fragment or parsed.path not in ('', '/')
+            or not re.fullmatch(r'[A-Za-z0-9.:-]+', hostname)
+            or len(value) > 500 or port == 0):
+        raise HTTPException(400, f'{what}: Nur vollständige HTTP(S)-Adressen ohne Pfad, Zugangsdaten oder Parameter.')
+    if hostname.lower() in ('localhost', '127.0.0.1', '::1', '0.0.0.0'):
+        raise HTTPException(400, f'{what}: localhost ist im Container nicht der NAS- oder Headscale-Dienst.')
+    return value
+
+
+@app.post('/api/headplane/config/create')
+def create_headplane_config(req: Request, payload: HeadplaneConfigSetup):
+    """Create one real Headplane file after the operator provides both URLs.
+
+    Does not submit installation, change an existing file, invent a Headscale
+    endpoint, or read out secrets. Uses the same authenticated CSRF protection
+    as other write endpoints. No Docker or ZimaOS access is exposed to browsers.
+    """
+    require_write(req)
+    doc = safe_yaml(payload.compose)
+    name, path = _im_headplane_config_service(doc)
+    headscale_url = _im_headplane_url(payload.headscale_url, 'Headscale-Adresse')
+    base_url = _im_headplane_url(payload.base_url, 'Headplane-Webadresse')
+    if base_url.endswith('/admin'):
+        raise HTTPException(400, 'Headplane-Webadresse darf nicht mit /admin enden.')
+    config = {
+        'server': {
+            'host': '0.0.0.0',
+            'port': 3000,
+            'base_url': base_url,
+            'cookie_secret': secrets.token_hex(16),
+            'cookie_secure': base_url.startswith('https://'),
+            'data_path': '/var/lib/headplane',
+        },
+        'headscale': {'url': headscale_url},
+    }
+    text = yaml.safe_dump(config, allow_unicode=True, sort_keys=False)
+    try:
+        image = subprocess.run(
+            ['docker', 'inspect', 'install-monitor', '--format', '{{.Image}}'],
+            text=True, capture_output=True, timeout=8, check=True,
+        ).stdout.strip()
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+            raise RuntimeError('Docker-Image nicht eindeutig erkannt')
+        command = [
+            'docker', 'run', '-i', '--rm', '--pull', 'never', '--network', 'none',
+            '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+            '--pids-limit', '32', '--memory', '64m',
+            '--mount', f'type=bind,source={HOST_APPDATA_ROOT},target=/im-appdata',
+            '--entrypoint', 'python', image, '-c', _IM_HEADPLANE_CONFIG_WRITER,
+        ]
+        result = subprocess.run(command,
+            input=json.dumps({'app':name,'content':text}),
+            text=True, capture_output=True, timeout=30, check=True)
+        response = json.loads(result.stdout)
+        if response != {'created':True,'path':path}:
+            raise RuntimeError('Bestätigung der Dateianlage fehlgeschlagen.')
+    except subprocess.CalledProcessError as exc:
+        # Deliberately omit arbitrary stderr/command text: it could contain
+        # secrets or raw input from a subprocess.
+        raise HTTPException(409, 'Headplane-Datei konnte nicht angelegt werden. '
+                            'Existiert sie bereits, wird sie nicht überschrieben. '
+                            'Bitte Dateityp, AppData-Zugriff und Docker-Socket prüfen.') from exc
+    except (OSError, subprocess.TimeoutExpired, RuntimeError, ValueError) as exc:
+        raise HTTPException(502, 'Headplane-Datei konnte auf dem NAS nicht sicher '
+                            'angelegt oder bestätigt werden. Keine Installation ausgelöst.') from exc
+    return {'created': True, 'path': path}
+
+
 # Docker bind-mounts the NAS /DATA/AppData directory writable at /im-appdata;
 # the service's own root filesystem remains read-only.  No host shell command
 # and no ZimaOS credentials are passed to the helper.
