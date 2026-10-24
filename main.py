@@ -5898,6 +5898,55 @@ def _im_convert_local_named_volumes(doc: dict, app_name: str, base: str) -> list
     return notes
 
 
+def _im_map_relative_config_file_mounts(doc: dict, root: str) -> list[str]:
+    """Map safe relative file *paths* to AppData without creating file data.
+
+    Resolves the Compose project directory consistently for every service.
+    An absolute bind does NOT make the target file exist: the separate NAS
+    regular-file probe remains mandatory, so neither a missing config nor an
+    unexpected symlink can be approved or silently created as a directory.
+    """
+    mapped: dict[str, str] = {}
+    for svc in doc['services'].values():
+        if not isinstance(svc, dict):
+            continue
+        for i, mount in enumerate(svc.get('volumes') or []):
+            if isinstance(mount, str):
+                chunks = mount.split(':', 2)
+                if len(chunks) < 2:
+                    continue
+                original, target = chunks[:2]
+                if (not _im_file_mount_expected(original, target)
+                        or not original.startswith('./')):
+                    continue
+                candidate = _im_safe_relative_bind(original, root)
+                if not candidate:
+                    continue
+                chunks[0] = candidate
+                svc['volumes'][i] = ':'.join(chunks)
+                mapped[original] = candidate
+            elif isinstance(mount, dict) and mount.get('type') == 'bind':
+                original, target = mount.get('source'), mount.get('target')
+                if (not isinstance(original, str) or not isinstance(target, str)
+                        or not original.startswith('./')
+                        or not _im_file_mount_expected(original, target)
+                        or (isinstance(mount.get('bind'), dict)
+                            and mount['bind'].get('create_host_path') is True)):
+                    continue
+                candidate = _im_safe_relative_bind(original, root)
+                if not candidate:
+                    continue
+                mount['source'] = candidate
+                mapped[original] = candidate
+    return [
+        'Datei-Mount ' + source + ' → ' + mapped[source] +
+        ' als ZimaOS-NAS-Pfad zugeordnet. Die echte Konfigurationsdatei '
+        'muss dort vor der Installation als reguläre Datei existieren; '
+        'es wurde keine Datei erzeugt oder aus GitHub importiert.'
+        for source in sorted(mapped)
+    ]
+
+
 def _convert_volumes(data: dict, name: str, base: str) -> None:
     """Resolve relative project binds without touching named Docker volumes.
 
@@ -5908,8 +5957,9 @@ def _convert_volumes(data: dict, name: str, base: str) -> None:
 
     A relative host bind is relative to the project, not the service. Convert
     `./foo` to base/foo identically for every service, while preserving ro/rw
-    flags. File mounts and parent traversals remain unchanged and are blocked
-    by preflight until the user supplies a real absolute NAS path.
+    flags. File mounts remain unchanged in this first pass and are then
+    conservatively mapped to absolute NAS paths for ZimaOS only; the mandatory
+    regular-file preflight still blocks missing files. Parent traversals stay blocked.
     """
     original = data.get('volumes')
     if original is not None and not isinstance(original, dict):
@@ -7372,6 +7422,7 @@ def build_plan(p: Plan) -> dict:
         preparation_notes.extend(_im_wordpress_dependency_cleanup(data))
     _convert_volumes(data, name, root)
     if p.target_system == 'zimaos':
+        preparation_notes.extend(_im_map_relative_config_file_mounts(data, root))
         preparation_notes.extend(_im_convert_local_named_volumes(data, name, root))
     if any(isinstance(vol, str) and vol.split(':', 1)[0] in (data.get('volumes') or {})
            or isinstance(vol, dict) and vol.get('type') == 'volume'
