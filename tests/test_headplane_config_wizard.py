@@ -113,6 +113,7 @@ class HeadplaneConfigWizardTests(unittest.TestCase):
             self.assertEqual(first.returncode,0,first.stderr)
             path=root/'headplane'/'config.yaml'
             self.assertTrue(path.is_file())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertIn('cookie_secret: test',path.read_text())
             second=run()
             self.assertNotEqual(second.returncode,0)
