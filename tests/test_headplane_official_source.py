@@ -76,7 +76,7 @@ class HeadplaneOfficialSourceTests(unittest.TestCase):
         self.assertEqual(volume[0]['source'],
                          '/DATA/AppData/headplane/config.yaml')
         self.assertEqual(volume[1]['source'], '/DATA/AppData/headplane/data')
-        self.assertEqual(result['main_service'], 'headplane')
+        self.assertEqual(result['main'], 'headplane')
         self.assertFalse(result['install_ready'])
         self.assertTrue(any('config.yaml' in issue for issue in result['setup_issues']))
 
