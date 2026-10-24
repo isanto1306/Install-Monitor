@@ -107,5 +107,102 @@ class HeadplaneOfficialSourceTests(unittest.TestCase):
         finder.assert_not_called()
 
 
+    def test_relative_headplane_config_path_maps_to_appdata_but_never_creates_file(self):
+        source = """
+services:
+  headplane:
+    image: ghcr.io/tale/headplane:latest
+    ports:
+      - '3001:3000'
+    volumes:
+      - ./config.yaml:/etc/headplane/config.yaml
+      - /DATA/AppData/headplane/headplane-data:/var/lib/headplane
+"""
+        observed = []
+        def probe(doc):
+            mounted = doc['services']['headplane']['volumes'][0]
+            observed.append(mounted)
+            return ['headplane: config.yaml fehlt auf dem NAS']
+        with patch.object(im, 'require_ports_free',
+                          return_value={'ports': [], 'blocked': False}), \
+             patch.object(im, '_im_host_file_mount_issues', side_effect=probe), \
+             patch.object(im, '_im_external_network_issues', return_value=[]):
+            result = im.build_plan(im.Plan(
+                source=source, name='headplane', title='Headplane'))
+        doc = im.safe_yaml(result['compose'])
+        mounts = doc['services']['headplane']['volumes']
+        self.assertEqual(mounts[0],
+                         '/DATA/AppData/headplane/config.yaml:/etc/headplane/config.yaml')
+        self.assertEqual(mounts[1],
+                         '/DATA/AppData/headplane/headplane-data:/var/lib/headplane')
+        self.assertEqual(observed, [mounts[0]])
+        self.assertFalse(result['install_ready'])
+        self.assertEqual(result['setup_issues'],
+                         ['headplane: config.yaml fehlt auf dem NAS'])
+        self.assertFalse(any('Relativer Bind-Mount' in x for x in result['setup_issues']))
+
+    def test_long_form_relative_config_keeps_readonly(self):
+        doc = im.safe_yaml("""
+services:
+  headplane:
+    image: ghcr.io/tale/headplane:latest
+    volumes:
+      - type: bind
+        source: ./config.yaml
+        target: /etc/headplane/config.yaml
+        read_only: true
+""")
+        notes = im._im_map_relative_config_file_mounts(
+            doc, '/DATA/AppData/headplane')
+        vol = doc['services']['headplane']['volumes'][0]
+        self.assertEqual(vol['source'], '/DATA/AppData/headplane/config.yaml')
+        self.assertTrue(vol['read_only'])
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(im._im_map_relative_config_file_mounts(
+            doc, '/DATA/AppData/headplane'), [])
+
+    def test_relative_sibling_filename_shared_by_two_services(self):
+        doc = im.safe_yaml("""
+services:
+  first:
+    image: alpine
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+  second:
+    image: alpine
+    volumes:
+      - ./config.yaml:/another.yaml
+""")
+        notes = im._im_map_relative_config_file_mounts(
+            doc, '/DATA/AppData/shared')
+        first = doc['services']['first']['volumes'][0]
+        second = doc['services']['second']['volumes'][0]
+        self.assertEqual(first,
+                         '/DATA/AppData/shared/config.yaml:/config.yaml:ro')
+        self.assertEqual(second,
+                         '/DATA/AppData/shared/config.yaml:/another.yaml')
+        self.assertEqual(len(notes), 1)
+
+    def test_traversal_and_unsafe_creation_settings_not_changed(self):
+        doc = im.safe_yaml("""
+services:
+  app:
+    image: alpine
+    volumes:
+      - ../secrets.json:/secrets.json
+      - ./folder:/folder
+      - type: bind
+        source: ./config.yaml
+        target: /etc/app/config.yaml
+        bind:
+          create_host_path: true
+""")
+        original = list(doc['services']['app']['volumes'])
+        notes = im._im_map_relative_config_file_mounts(
+            doc, '/DATA/AppData/app')
+        self.assertEqual(doc['services']['app']['volumes'], original)
+        self.assertFalse(notes)
+
+
 if __name__ == '__main__':
     unittest.main()
