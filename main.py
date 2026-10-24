@@ -2278,6 +2278,29 @@ x-casaos:
   main: homeassistant
   port_map: '8123'
 """,
+    # Official publisher instructions: https://headplane.net/install/docker
+    # This replaces the repository's root compose.yaml, which explicitly says
+    # it is only a developer stack and does not deploy Headplane itself.
+    "tale/headplane": """name: headplane
+services:
+  headplane:
+    image: ghcr.io/tale/headplane:latest
+    container_name: headplane
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/config.yaml
+        target: /etc/headplane/config.yaml
+        read_only: true
+      - type: bind
+        source: /DATA/AppData/$AppID/data
+        target: /var/lib/headplane
+x-casaos:
+  main: headplane
+  port_map: "3000"
+""",
     "music-assistant/server": """name: music-assistant-server
 services:
   music-assistant-server:
@@ -2411,6 +2434,15 @@ def _publisher_template(owner: str, repo: str) -> tuple[str, str, list[str]] | N
     content = OFFICIAL_REPO_TEMPLATES.get(key)
     if content is None:
         return None
+    if key == 'tale/headplane':
+        return content, 'https://headplane.net/install/docker', [
+            'Die Root-Compose von tale/headplane ist ausdrücklich nur für die Entwicklung vorgesehen und enthält keine Headplane-Anwendung. Offizielle Docker-Installationsvorlage verwendet.',
+            'Headplane benötigt einen bereits laufenden Headscale-Server und eine echte Konfigurationsdatei config.yaml. Keine unbekannten Headscale-Adressen oder Cookie-Secrets automatisch erfinden.',
+            'config.yaml nach der offiziellen Anleitung erstellen: headscale.url auf den vorhandenen Headscale-Server setzen, server.cookie_secret mit genau 32 zufälligen Zeichen vergeben.',
+            'Das Verzeichnis /DATA/AppData/headplane/data dient den persistenten Headplane-Daten. Datei-Mount und Zugriffsrechte werden vor Installation geprüft.',
+            'Der Webdienst liegt innerhalb des Containers auf Port 3000; den freien NAS-Host-Port in der Konfiguration prüfen. Zugriff über /admin.',
+            'Keine Caddy-Entwicklungsumgebung, kein zweiter Headscale-Container und keine Testzertifikate werden automatisch installiert.',
+        ]
     if key == 'home-assistant/core':
         return content, 'https://www.home-assistant.io/installation/linux/', [
             'Keine geeignete Installations-Compose im Quellcode-Repository. '
@@ -3689,6 +3721,12 @@ def _discover_github_repository(parts: list[str]) -> tuple[str, str, list[str]]:
     # The upstream installation instructions live in the GitHub wiki, not
     # necessarily in a checked-in compose.yaml. Avoid a pointless unauthenticated
     # GitHub API call for this explicitly documented publisher integration.
+    if owner.lower() == 'tale' and repo.lower() == 'headplane':
+        # The repository root compose.yaml starts with:
+        # 'THIS IS A DEVELOPER CONFIGURATION FILE' / 'NOT ... DEPLOY'.
+        # Prefer the official production Docker documentation (no Caddy
+        # developer proxy, local development headscale, or testing certs).
+        return _publisher_template(owner, repo)
     if owner.lower() == 'gtsteffaniak' and repo.lower() == 'filebrowser':
         return _filebrowser_publisher_draft()
     # This is a verified publisher-image deployment, not a generic fallback:
@@ -8671,6 +8709,19 @@ def _analyze_source_payload(payload: Source):
         content, var_notes = _resolve_compose_variables(normalized)
     else:
         raise HTTPException(400, "Unbekannte Quelle.")
+    # Explicit links/pasted YAML to the manufacturer's *development* stack
+    # must not masquerade as a production installer. Unlike a repo URL, an
+    # explicit compose choice must never be silently rewritten.
+    if (payload.kind in ('url', 'yaml')
+            and re.search(r'(?im)^\\s*#\\s*THIS IS A DEVELOPER CONFIGURATION FILE', content)
+            and re.search(r'(?im)^\\s*#\\s*IT IS NOT AN EXAMPLE OF SOMETHING YOU DEPLOY', content)
+            and 'headplane-dev' in content):
+        raise HTTPException(422,
+            'Headplane: Diese Compose-Datei ist laut Hersteller nur für die Entwicklung. '
+            'Sie enthält Caddy und einen Test-Headscale statt des Headplane-Produktivdienstes. '
+            'Bitte https://github.com/tale/headplane als Repository-Quelle verwenden; '
+            'Install Monitor lädt dann die offizielle Docker-Vorlage. '
+            'Eine gültige config.yaml und ein Headscale-Server bleiben erforderlich.')
     doc = safe_yaml(content)
     image_suggestions: list[dict] = []
     if payload.kind == "url" or (payload.kind == "image" and project_url):
