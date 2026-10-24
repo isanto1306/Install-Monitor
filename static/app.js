@@ -1224,6 +1224,38 @@ async function choosePublisherFromPreview(item,button){
   await preview();
  }catch(e){notice(errorMessage(e),true);button.disabled=false}
 }
+const headplaneConfigText={
+ de:{heading:'Headplane-Konfiguration erstellen',hint:'Ein laufender Headscale-Server ist erforderlich. Install Monitor erstellt nur die fehlende config.yaml mit zufälligem Cookie-Secret und überschreibt niemals bestehende Dateien.',headscale:'Headscale-Adresse (aus Headplane erreichbar)',headplane:'Headplane-Webadresse (ohne /admin)',create:'config.yaml sicher erstellen',success:'Headplane-Datei erstellt. Voraussetzungen werden erneut geprüft.',empty:'Beide vollständigen HTTP(S)-Adressen eingeben.'},
+ en:{heading:'Create Headplane configuration',hint:'An existing Headscale server is required. Only the missing config.yaml is created with a random cookie secret; existing files are never overwritten.',headscale:'Headscale URL (reachable from Headplane)',headplane:'Headplane public URL (without /admin)',create:'Safely create config.yaml',success:'Headplane configuration created. Checking prerequisites again.',empty:'Enter both complete HTTP(S) URLs.'},
+ fr:{heading:'Créer la configuration Headplane',hint:'Un serveur Headscale existant est nécessaire. Seul config.yaml est créé avec un secret aléatoire, sans écraser de fichier.',headscale:'URL Headscale accessible depuis Headplane',headplane:'URL Headplane (sans /admin)',create:'Créer config.yaml',success:'Configuration créée. Nouvelle vérification.',empty:'Saisissez les deux URL HTTP(S).'},
+ pt:{heading:'Criar configuração Headplane',hint:'É necessário um servidor Headscale em execução. Apenas config.yaml é criado com segredo aleatório, sem substituir ficheiros.',headscale:'URL Headscale acessível pelo contentor',headplane:'URL Headplane (sem /admin)',create:'Criar config.yaml',success:'Configuração criada. A verificar novamente.',empty:'Insira ambos os URL HTTP(S).'},
+ es:{heading:'Crear configuración Headplane',hint:'Se necesita un servidor Headscale existente. Solo se crea config.yaml con un secreto aleatorio, sin sobrescribir archivos.',headscale:'URL Headscale accesible desde Headplane',headplane:'URL Headplane (sin /admin)',create:'Crear config.yaml',success:'Configuración creada. Comprobando requisitos.',empty:'Introduce ambas URL HTTP(S).'}
+};
+function renderHeadplaneConfigWizard(messages){
+ if(!messages.some(m=>m.includes('config.yaml')&&m.includes('existiert nicht')))return;
+ if(!$('#generatedCompose').value.includes('ghcr.io/tale/headplane:'))return;
+ const labels=headplaneConfigText[lang]||headplaneConfigText.de;
+ const box=document.createElement('div');box.className='port-review';box.id='headplaneConfigWizard';box.style.marginTop='16px';
+ const heading=document.createElement('strong');heading.textContent=labels.heading;
+ const hint=document.createElement('p');hint.className='field-note';hint.textContent=labels.hint;
+ const first=document.createElement('label');first.textContent=labels.headscale;
+ const headscale=document.createElement('input');headscale.id='headplaneHeadscaleUrl';headscale.placeholder='http://NAS-IP:8080';headscale.autocomplete='off';headscale.spellcheck=false;
+ const second=document.createElement('label');second.textContent=labels.headplane;
+ const base=document.createElement('input');base.id='headplanePublicUrl';base.placeholder='http://NAS-IP:3001';base.autocomplete='off';base.spellcheck=false;
+ const create=document.createElement('button');create.className='secondary';create.type='button';create.textContent=labels.create;create.style.marginTop='12px';
+ create.onclick=async()=>{
+  const headscaleUrl=headscale.value.trim(),baseUrl=base.value.trim();
+  if(!headscaleUrl||!baseUrl){notice(labels.empty,true);return}
+  create.disabled=true;
+  try{
+   await request('/api/headplane/config/create',{compose:$('#generatedCompose').value,headscale_url:headscaleUrl,base_url:baseUrl});
+   notice(labels.success);
+   await preview();
+  }catch(e){notice(errorMessage(e),true);create.disabled=false}
+ };
+ box.append(heading,hint,first,headscale,second,base,create);
+ $('#setupIssues').append(box);
+}
 function renderRequirements(messages,actions){
  const wrap=$('#setupIssues');wrap.replaceChildren();
  if(!messages.length)return;
@@ -1243,6 +1275,7 @@ function renderRequirements(messages,actions){
   }
   entry.appendChild(btn);wrap.appendChild(entry);
  });
+ renderHeadplaneConfigWizard(messages);
 }
 function renderSetupLater(options){
  const box=$('#setupLaterReview');box.replaceChildren();
