@@ -8709,19 +8709,28 @@ def _analyze_source_payload(payload: Source):
         content, var_notes = _resolve_compose_variables(normalized)
     else:
         raise HTTPException(400, "Unbekannte Quelle.")
-    # Explicit links/pasted YAML to the manufacturer's *development* stack
-    # must not masquerade as a production installer. Unlike a repo URL, an
-    # explicit compose choice must never be silently rewritten.
-    if (payload.kind in ('url', 'yaml')
-            and re.search(r'(?im)^\s*#\s*THIS IS A DEVELOPER CONFIGURATION FILE', content)
-            and re.search(r'(?im)^\s*#\s*IT IS NOT AN EXAMPLE OF SOMETHING YOU DEPLOY', content)
-            and 'headplane-dev' in content):
-        raise HTTPException(422,
-            'Headplane: Diese Compose-Datei ist laut Hersteller nur für die Entwicklung. '
-            'Sie enthält Caddy und einen Test-Headscale statt des Headplane-Produktivdienstes. '
-            'Bitte https://github.com/tale/headplane als Repository-Quelle verwenden; '
-            'Install Monitor lädt dann die offizielle Docker-Vorlage. '
-            'Eine gültige config.yaml und ein Headscale-Server bleiben erforderlich.')
+    # The upstream Headplane root Compose is a development-only stack.
+    # Detect its actual structure, since YAML variable expansion deliberately
+    # drops comments such as "NOT ... SOMETHING YOU DEPLOY".
+    if payload.kind in ('url', 'yaml'):
+        preliminary = safe_yaml(content)
+        networks = preliminary.get('networks') or {}
+        services = preliminary['services']
+        caddy = services.get('caddy', {})
+        caddy_mounts = caddy.get('volumes') or [] if isinstance(caddy, dict) else []
+        if (isinstance(networks, dict)
+                and 'headplane-dev' in networks
+                and 'caddy' in services and 'headscale' in services
+                and 'headplane' not in services
+                and any(isinstance(mount, str)
+                        and mount.startswith('./Caddyfile:/etc/caddy/Caddyfile')
+                        for mount in caddy_mounts)):
+            raise HTTPException(422,
+                'Headplane: Diese Compose-Datei ist laut Hersteller nur für die Entwicklung. '
+                'Sie enthält Caddy und einen Test-Headscale statt des Headplane-Produktivdienstes. '
+                'Bitte https://github.com/tale/headplane als Repository-Quelle verwenden; '
+                'Install Monitor lädt dann die offizielle Docker-Vorlage. '
+                'Eine gültige config.yaml und ein Headscale-Server bleiben erforderlich.')
     doc = safe_yaml(content)
     image_suggestions: list[dict] = []
     if payload.kind == "url" or (payload.kind == "image" and project_url):
