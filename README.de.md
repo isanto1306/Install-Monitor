@@ -56,6 +56,12 @@ python3 setup_credentials.py --output /DATA/AppData/Install-Monitor/.env
 - `docker restart install-monitor` lädt **keine** neuen Compose-Umgebungsvariablen. Bei Änderungen an `.env` müssen Container mit `docker compose up -d --force-recreate --no-build` am Projektstandort neu erstellt werden, nachdem die Konfiguration geprüft wurde.
 - Die alte Klartextvariable `IM_ADMIN_PASSWORD` wird für Bestandsinstallationen noch akzeptiert; bei Neuinstallationen den neuen Hash verwenden.
 
+## Headplane und relative Konfigurationsdateien (Beta 20)
+
+Install Monitor erkennt, dass die Root-`compose.yaml` des Projekts `tale/headplane` laut Herausgeber nur für die Entwicklung gedacht ist. Ein Repository-Import verwendet stattdessen die offizielle Docker-Installationsvorlage mit einem Headplane-Container. Der Headscale-Server muss bereits eingerichtet sein; es wird kein Test-Headscale installiert.
+
+Bei **ZimaOS** werden sichere relative Datei-Bind-Mounts wie `./config.yaml:/etc/headplane/config.yaml` automatisch auf `/DATA/AppData/headplane/config.yaml:/etc/headplane/config.yaml` bezogen. Die Datei muss auf dem NAS **wirklich existieren**. Install Monitor erzeugt keine leere Schein-Datei und übernimmt keine Konfigurationsinhalte aus dem GitHub-Repository. Der Benutzer muss die Datei mit `headscale.url` und einem sicheren `server.cookie_secret` vorbereiten. Die Datei-Prüfung bleibt aktiv.
+
 ## AppData-Volumes bei neuen ZimaOS-Installationen (Beta 19)
 
 Gewöhnliche, neu angelegte und von Compose verwaltete benannte Docker-Volumes werden in der ZimaOS-Vorschau automatisch als Bind-Mounts unter `/DATA/AppData/<app>/<volume>` eingetragen. Mehrere Container mit demselben Volume verwenden **denselben** NAS-Datenordner. Ein ursprünglicher `:ro`-Mount bleibt schreibgeschützt; die ursprünglichen Containerziele bleiben erhalten.
