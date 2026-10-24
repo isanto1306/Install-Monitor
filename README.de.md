@@ -56,6 +56,12 @@ python3 setup_credentials.py --output /DATA/AppData/Install-Monitor/.env
 - `docker restart install-monitor` lädt **keine** neuen Compose-Umgebungsvariablen. Bei Änderungen an `.env` müssen Container mit `docker compose up -d --force-recreate --no-build` am Projektstandort neu erstellt werden, nachdem die Konfiguration geprüft wurde.
 - Die alte Klartextvariable `IM_ADMIN_PASSWORD` wird für Bestandsinstallationen noch akzeptiert; bei Neuinstallationen den neuen Hash verwenden.
 
+## Headplane-Konfiguration direkt erstellen (Beta 21)
+
+Fehlt die Konfigurationsdatei `/DATA/AppData/headplane/config.yaml`, erscheint im Prüfschritt bei der offiziellen Headplane-App ein eigener Dialog. Dort werden **die tatsächlich vom Headplane-Container erreichbare Headscale-Adresse** (HTTP(S), nicht gRPC) und die gewünschte Headplane-Webadresse (ohne `/admin`) eingetragen. Es muss bereits ein Headscale-Server existieren. Reines Tailscale ist kein Ersatz.
+
+Install Monitor erstellt **nur nach ausdrücklichem Klick** die fehlende Datei mit einem kryptografisch zufälligen Sitzungsschlüssel. Die Datei erhält Zugriffsrechte `0600`, wird nicht überschrieben, und die normale Dateiprüfung läuft anschließend erneut. Keine automatische Installation durch die Dateierstellung. Zusätzliche Headplane-Integrationen wie OIDC und Docker erfordern separate Konfiguration.
+
 ## Headplane und relative Konfigurationsdateien (Beta 20)
 
 Install Monitor erkennt, dass die Root-`compose.yaml` des Projekts `tale/headplane` laut Herausgeber nur für die Entwicklung gedacht ist. Ein Repository-Import verwendet stattdessen die offizielle Docker-Installationsvorlage mit einem Headplane-Container. Der Headscale-Server muss bereits eingerichtet sein; es wird kein Test-Headscale installiert.
