@@ -76,8 +76,8 @@ class HeadplaneConfigWizardTests(unittest.TestCase):
         with patch.object(im, 'require_write'), \
              patch.object(im.subprocess, 'run', side_effect=fake_run):
             result = im.create_headplane_config(None, im.HeadplaneConfigSetup(
-                compose=EXAMPLE, headscale_url='http://192.168.178.191:8080',
-                base_url='http://192.168.178.191:3001'))
+                compose=EXAMPLE, headscale_url='http://headscale.example.test:8080',
+                base_url='http://nas.example.test:3001'))
         self.assertEqual(result, {'created':True,
                                   'path':'/DATA/AppData/headplane/config.yaml'})
         self.assertEqual(len(invocations),2)
@@ -90,8 +90,8 @@ class HeadplaneConfigWizardTests(unittest.TestCase):
         self.assertIn('-i',cmd)
         data=json.loads(kwargs['input'])
         config=yaml.safe_load(data['content'])
-        self.assertEqual(config['headscale']['url'], 'http://192.168.178.191:8080')
-        self.assertEqual(config['server']['base_url'], 'http://192.168.178.191:3001')
+        self.assertEqual(config['headscale']['url'], 'http://headscale.example.test:8080')
+        self.assertEqual(config['server']['base_url'], 'http://nas.example.test:3001')
         self.assertFalse(config['server']['cookie_secure'])
         self.assertEqual(len(config['server']['cookie_secret']),32)
         self.assertEqual(config['server']['data_path'], '/var/lib/headplane')
