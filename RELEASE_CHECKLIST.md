@@ -1,24 +1,25 @@
-# Freigabecheckliste v0.2.63-beta.20
+# Freigabecheckliste v0.2.64-beta.21
 
-## Funktionsumfang
-- [x] Headplane-Repository verweist auf die offizielle Docker-Installationsvariante statt auf die Entwickler-Compose.
-- [x] Direkter Import der eindeutig erkennbaren Headplane-Entwickler-Compose wird mit Erklärung blockiert.
-- [x] Sichere relative Konfigurationsdatei-Mounts werden für ZimaOS auf absolute AppData-Pfade abgebildet.
-- [x] Datei-Ziel, Schreibschutz und gemeinsame Dateiquelle über mehrere Services bleiben erhalten.
-- [x] Keine automatische Erstellung, Übernahme oder Überschreibung der Datei config.yaml.
-- [x] Ursprüngliche Dateitypprüfung und Installationssperren bleiben aktiv.
-- [x] Unsichere relative Traversal-Pfade werden nicht automatisch umgesetzt.
-- [x] Beta 19 AppData-Volume-Konvertierung wird nicht verändert.
+## Änderungen / Sicherheit
+- [x] Optionaler Headplane-Konfigurationsdialog bei fehlender config.yaml in DE/EN/FR/PT/ES.
+- [x] URLs sind Pflichtangaben; keine automatisch erfundene Headscale-Adresse.
+- [x] Backend lässt nur den offiziellen Headplane-Dienst mit eigenem absolutem AppData-Config-Mount zu.
+- [x] Sichere Dateierstellung im Netzwerk-isolierten, nicht privilegierten Docker-Hilfscontainer, ohne bestehende Dateien zu überschreiben.
+- [x] Ausschließlich ein exklusiv angelegtes `config.yaml` unter dem App-Namespace; keine Symlinks.
+- [x] Cookie-Secret kryptografisch zufällig; nur über stdin übertragen, nicht in Logs/Antworten.
+- [x] Datei wird mit Berechtigungen `0600` erstellt.
+- [x] Nach Dateierstellung erfolgt die reguläre Prüfansicht erneut; ohne echte config.yaml bleibt Installation gesperrt.
+- [x] Beta 19 und 20 Funktionen unverändert.
 
-## Veröffentlichung / CI
-- [x] Source Checks am Beta-20-Freigabecommit erfolgreich (GitHub Actions).
-- [x] GHCR Version 0.2.63-beta.20 gebaut, und öffentlicher Pull mit Versionstag und :beta bestätigt.
-- [x] ZimaOS App Store mit bestätigtem GHCR-Image aktualisiert und erzeugte gh-pages Compose kontrolliert.
+## Veröffentlichung
+- [ ] GitHub Source Checks des finalen Freigabestands erfolgreich.
+- [ ] Docker-Image v0.2.64-beta.21 erfolgreich publiziert, `:beta` bestätigt.
+- [ ] Anonymer GHCR-Pull für Versionstag und `:beta` sowie Versionslabel verifiziert.
+- [ ] ZimaOS App Store aktualisiert und generierte gh-pages Compose auf Beta 21 überprüft.
 
-## Praxis / Sicherheit
-- [ ] Erstinstallation von Headplane mit gültiger config.yaml und laufendem Headscale auf einem echten ZimaOS-NAS verifiziert.
-- [ ] Konfigurationsdatei vor der Installation auf Host-Dateityp und passende Zugriffsrechte prüfen.
-- [ ] Weitere reale Compose-Projekte auf relative Datei-Mounts prüfen.
-- [ ] Vorherige noch offene Security-Checkpunkte (z. B. Tokenrotation) separat abschließen.
+## Praxistests (offen)
+- [ ] Headplane-Erstinstallation mit tatsächlich laufendem Headscale auf ZimaOS getestet.
+- [ ] Cookie-/Config-Dateiberechtigungen und Schreibzugriff auf dem konkreten NAS verifiziert.
+- [ ] Erweiterte Headplane-Integrationen nur mit ausdrücklicher Konfiguration aktivieren.
 
-Diese Sicherheitschecks werden nicht übersprungen, um die Installation zu erzwingen.
+**Keine automatisierte Umgehung von Sicherheits- oder Dateiprüfungen.**
