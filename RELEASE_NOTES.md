@@ -1,30 +1,31 @@
 # Install Monitor – Release Notes
 
-## Version 0.2.63 Beta 20 (24.10.2026)
+## Version 0.2.64 Beta 21 (24.10.2026)
 
-### Headplane: offizielle Docker-Installation statt Entwickler-Compose
-- Die GitHub-Repository-Quelle `https://github.com/tale/headplane` verwendet die offizielle Docker-Installationsanleitung `https://headplane.net/install/docker`, nicht länger die Root-`compose.yaml` aus der Entwicklerumgebung.
-- Headplane wird als eigener Hauptdienst mit `ghcr.io/tale/headplane:latest` und internem Port 3000 angeboten. Kein automatisch hinzugefügter Test-Headscale, Caddy, Entwicklungsnetzwerk oder Testzertifikat.
-- Notwendige Host-Konfiguration und persistente App-Daten werden im gewählten ZimaOS-AppData-Bereich gemountet. Die Datei `config.yaml` bleibt **Pflicht** und muss als reguläre Datei auf dem NAS existieren.
-- Wird die eindeutig erkennbare Headplane-Entwickler-`compose.yaml` direkt als YAML oder Datei-URL importiert, erscheint eine Erklärung statt eines fälschlich installierbaren Stacks.
+### Headplane: config.yaml direkt in Install Monitor erstellen
+- Wenn bei der offiziellen Headplane-Docker-Vorlage die Konfigurationsdatei `/DATA/AppData/<app>/config.yaml` fehlt, bietet die Prüfansicht jetzt einen gezielten Einrichtungsdialog.
+- Der Anwender trägt die tatsächliche, vom Headplane-Container erreichbare Headscale-URL sowie die gewünschte Headplane-Webadresse ein. Die Adressen werden nicht erraten; ein bereits laufender Headscale-Server bleibt Voraussetzung.
+- Ein CSRF-geschützter und authentifizierter Backend-Endpunkt erstellt eine minimale, laut offizieller Headplane-Dokumentation gültige `config.yaml` einschließlich eines zufälligen, 32 Zeichen langen `server.cookie_secret`.
+- Die Datei wird ausschließlich über einen isolierten Docker-Hilfscontainer unter `/DATA/AppData/<app>/config.yaml` geschrieben. Keine Netzwerkverbindung, kein privilegierter Hostzugriff, keine bestehende Datei wird überschrieben.
+- Erstellte Konfigurationsdateien erhalten nur Eigentümerrechte `0600`. Session-Secret und Dateiinhalte erscheinen weder in Logs noch Docker-Kommandoargumenten oder API-Antworten.
+- Nach erfolgreicher Dateierstellung wird die normale Installation-vorher-Prüfung erneut ausgeführt. Fehlende oder ungültige Dateien blockieren weiterhin die Installation. Die Dateierstellung selbst startet **keinen** Container.
+- Die Oberfläche unterstützt Deutsch, Englisch, Französisch, Portugiesisch und Spanisch.
 
-### Relative Konfigurationsdateien in Compose
-- Sichere, relative Datei-Mounts wie `./config.yaml:/etc/headplane/config.yaml` erhalten bei ZimaOS den absoluten AppData-Quellpfad `/DATA/AppData/headplane/config.yaml:/etc/headplane/config.yaml`.
-- Identische relative Dateiquellen werden in allen betroffenen Diensten konsistent auf denselben Hostpfad gemappt. Zielpfad und Schreibschutz bleiben erhalten.
-- Die Umwandlung **erstellt keine Dateien**, importiert keine unbelegten GitHub-Nebendateien und umgeht weder die Hostdatei-/Symlink-Prüfung noch andere Installationssperren.
-- Relative Traversal-Pfade wie `../secret.yaml` sowie explizite `bind.create_host_path: true`-Mounts werden nicht automatisch umgeschrieben.
-- Die Änderung greift nur bei ZimaOS-Zielen. Andere Compose-Zielsysteme behalten ihre bisherigen Regeln.
+### Grenzen und Voraussetzungen
+- Headplane benötigt **Headscale**, nicht lediglich einen Tailscale-Client.
+- `headscale.url` ist der HTTP(S)-Endpunkt des Headscale-Servers (nicht gRPC). Die URL muss vom Headplane-Container erreichbar sein.
+- Mit dem Assistenten wird eine minimalistische Konfiguration für die normale Anmeldung erzeugt. Fortgeschrittene Funktionen wie OIDC oder Docker-/DNS-Integration erfordern zusätzliche Einstellungen, API-Schlüssel bzw. weitere Mounts.
+- Existiert die Datei bereits, bleibt sie unverändert. Kein automatisches Ändern von Benutzerkonfigurationen und keine Datenmigration.
+- Für Umgebungen ohne gültigen erreichbaren Headscale-Server reicht die automatische Konfiguration nicht für eine funktionierende Anwendung aus.
+- Ein Live-Installationstest auf einem echten ZimaOS-NAS steht noch aus.
 
-### Voraussetzungen und Grenzen
-- Headplane braucht einen bereits eingerichteten Headscale-Server und eine gültige `config.yaml` mit `headscale.url` und `server.cookie_secret` (32 zufällige Zeichen).
-- Die Sicherheitsprüfung einer fehlenden oder nicht regulären Konfigurationsdatei bleibt aktiv: Ohne echte Hostdatei keine Installation.
-- Ein erfolgreicher GitHub-Test beweist nicht, dass das Drittanbieter-Image auf jedem ZimaOS-NAS bereits funktionsfähig ist.
-- Die Umwandlung früherer Beta 19 von gewöhnlichen benannten Volumes nach AppData bleibt unverändert, ohne bestehende Docker-Daten automatisch zu migrieren.
+### Unverändert
+- Beta 20: offizielle Headplane-Docker-Quelle und relative Datei-Mounts.
+- Beta 19: sichere AppData-Zuordnung gewöhnlicher benannter Docker-Volumes.
 
 ### Veröffentlichung
-- Version: `0.2.63-beta.20`
-- Docker-Image: `ghcr.io/isanto1306/install-monitor:0.2.63-beta.20`
-- `:beta` verweist nach erfolgreichem Build auf diese Version.
-- ZimaOS App Store wird nur mit bestätigtem öffentlichen GHCR-Image aktualisiert.
+- Versionskennung: `0.2.64-beta.21`.
+- Container: `ghcr.io/isanto1306/install-monitor:0.2.64-beta.21` und nach erfolgreich geprüftem Publish auch `:beta`.
+- App-Store-Synchronisation erst nach erfolgreicher Veröffentlichung und anonymem Image-Pull.
 
 **Versionsregel:** Nur die aktuelle Beta wird hier dokumentiert.
