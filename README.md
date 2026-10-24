@@ -1,6 +1,6 @@
 # Install Monitor
 
-**v0.2.63 Beta 20 – Public beta · GPL v3**
+**v0.2.64 Beta 21 – Public beta · GPL v3**
 
 Install Monitor is a self-hosted, dark-mode application for inspecting and configuring Docker images, repositories, and Compose projects for **ZimaOS** and compatible Linux hosts. It guides users through source inspection, storage paths, ports, permissions, resource settings, and a reviewed installation process.
 
@@ -48,6 +48,12 @@ sh install.sh --docker
 Open `http://<YOUR-NAS-IP>:9012` **within your trusted LAN** to log in with the username and password you just configured. For remote access, use HTTPS/VPN.
 
 This Docker deployment does **not** automatically create a native ZimaOS dashboard tile. The native ZimaOS app registration path is not implemented in this beta. A genuine first-run installation on a clean ZimaOS system and Docker image build must be validated before a production recommendation.
+
+## Create missing Headplane config.yaml (Beta 21)
+
+In the preview step, if the official Headplane service is missing its `/DATA/AppData/headplane/config.yaml`, the wizard asks for the **actual existing Headscale HTTP(S) URL reachable by the container** and Headplane's externally used web URL (without `/admin`). Headscale must already be running; a Tailscale client is not a Headscale server.
+
+Only after a user action, a minimally configured `config.yaml` is created with a random 32-character cookie secret and permission mode `0600`. Existing files are never overwritten. The standard preflight is rerun, and creating this file alone does not install Headplane. Advanced OIDC/Docker integration needs separate configuration.
 
 ## Headplane and relative configuration file mounts (Beta 20)
 
