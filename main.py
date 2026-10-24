@@ -8713,8 +8713,8 @@ def _analyze_source_payload(payload: Source):
     # must not masquerade as a production installer. Unlike a repo URL, an
     # explicit compose choice must never be silently rewritten.
     if (payload.kind in ('url', 'yaml')
-            and re.search(r'(?im)^\\s*#\\s*THIS IS A DEVELOPER CONFIGURATION FILE', content)
-            and re.search(r'(?im)^\\s*#\\s*IT IS NOT AN EXAMPLE OF SOMETHING YOU DEPLOY', content)
+            and re.search(r'(?im)^\s*#\s*THIS IS A DEVELOPER CONFIGURATION FILE', content)
+            and re.search(r'(?im)^\s*#\s*IT IS NOT AN EXAMPLE OF SOMETHING YOU DEPLOY', content)
             and 'headplane-dev' in content):
         raise HTTPException(422,
             'Headplane: Diese Compose-Datei ist laut Hersteller nur für die Entwicklung. '
