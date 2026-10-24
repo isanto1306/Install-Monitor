@@ -19,13 +19,13 @@ jobs:
           set -eu
           docker logout ghcr.io >/dev/null 2>&1 || true
           docker pull ghcr.io/isanto1306/install-monitor:beta
-          docker pull ghcr.io/isanto1306/install-monitor:0.2.62-beta.19
+          docker pull ghcr.io/isanto1306/install-monitor:0.2.63-beta.20
       - name: Verify beta and release image match
         run: |
           set -eu
           beta=$(docker image inspect ghcr.io/isanto1306/install-monitor:beta --format '{{.Id}}')
-          release=$(docker image inspect ghcr.io/isanto1306/install-monitor:0.2.62-beta.19 --format '{{.Id}}')
+          release=$(docker image inspect ghcr.io/isanto1306/install-monitor:0.2.63-beta.20 --format '{{.Id}}')
           test "$beta" = "$release"
-          docker image inspect ghcr.io/isanto1306/install-monitor:0.2.62-beta.19 \
+          docker image inspect ghcr.io/isanto1306/install-monitor:0.2.63-beta.20 \
             --format '{{index .Config.Labels "org.opencontainers.image.version"}}' \
-            | grep -Fx '0.2.62-beta.19'
+            | grep -Fx '0.2.63-beta.20'
