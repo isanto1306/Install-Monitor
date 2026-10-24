@@ -11,9 +11,9 @@
 - [x] Beta 19 AppData-Volume-Konvertierung wird nicht verändert.
 
 ## Veröffentlichung / CI
-- [ ] Source Checks am finalen Freigabecommit erfolgreich.
-- [ ] GHCR Version 0.2.63-beta.20 gebaut, und öffentlicher Pull mit Versionstag und :beta bestätigt.
-- [ ] ZimaOS App Store mit bestätigtem GHCR-Image aktualisiert und erzeugte gh-pages Compose kontrolliert.
+- [x] Source Checks am Beta-20-Freigabecommit erfolgreich (GitHub Actions).
+- [x] GHCR Version 0.2.63-beta.20 gebaut, und öffentlicher Pull mit Versionstag und :beta bestätigt.
+- [x] ZimaOS App Store mit bestätigtem GHCR-Image aktualisiert und erzeugte gh-pages Compose kontrolliert.
 
 ## Praxis / Sicherheit
 - [ ] Erstinstallation von Headplane mit gültiger config.yaml und laufendem Headscale auf einem echten ZimaOS-NAS verifiziert.
