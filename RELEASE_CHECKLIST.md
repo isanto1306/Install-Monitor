@@ -12,10 +12,10 @@
 - [x] Beta 19 und 20 Funktionen unverändert.
 
 ## Veröffentlichung
-- [ ] GitHub Source Checks des finalen Freigabestands erfolgreich.
-- [ ] Docker-Image v0.2.64-beta.21 erfolgreich publiziert, `:beta` bestätigt.
-- [ ] Anonymer GHCR-Pull für Versionstag und `:beta` sowie Versionslabel verifiziert.
-- [ ] ZimaOS App Store aktualisiert und generierte gh-pages Compose auf Beta 21 überprüft.
+- [x] GitHub Source Checks des finalen Freigabestands erfolgreich.
+- [x] Docker-Image v0.2.64-beta.21 erfolgreich publiziert, `:beta` bestätigt.
+- [x] Anonymer GHCR-Pull für Versionstag und `:beta` sowie Versionslabel verifiziert.
+- [x] ZimaOS App Store aktualisiert und generierte gh-pages Compose auf Beta 21 überprüft.
 
 ## Praxistests (offen)
 - [ ] Headplane-Erstinstallation mit tatsächlich laufendem Headscale auf ZimaOS getestet.
