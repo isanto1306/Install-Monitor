@@ -49,6 +49,12 @@ Open `http://<YOUR-NAS-IP>:9012` **within your trusted LAN** to log in with the 
 
 This Docker deployment does **not** automatically create a native ZimaOS dashboard tile. The native ZimaOS app registration path is not implemented in this beta. A genuine first-run installation on a clean ZimaOS system and Docker image build must be validated before a production recommendation.
 
+## Verified WebUI ports and import-path regression tests (Beta 22)
+
+At source analysis, Install Monitor may fill in a missing published WebUI port **only when a unique container-loopback HTTP healthcheck establishes the TCP target port**. Existing mappings from manually pasted YAML remain unchanged. Image and publisher-URL imports can remap a conflicting host port only to a socket-verified free NAS port.
+
+Database, worker, host-network and reverse-proxy-only services remain unexposed. Unknown WebUI ports are never invented. Docker-image, GitHub/URL, raw YAML and LinuxServer.io import behavior are covered by regression tests and documented in `AUDIT_IMPORT_PATHS.md`.
+
 ## Create missing Headplane config.yaml (Beta 21)
 
 In the preview step, if the official Headplane service is missing its `/DATA/AppData/headplane/config.yaml`, the wizard asks for the **actual existing Headscale HTTP(S) URL reachable by the container** and Headplane's externally used web URL (without `/admin`). Headscale must already be running; a Tailscale client is not a Headscale server.
