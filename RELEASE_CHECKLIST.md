@@ -11,10 +11,10 @@
 - [x] Änderungen aus Beta 19–21 bleiben im vorhandenen Code erhalten.
 
 ## Veröffentlichung
-- [ ] GitHub Source Checks für den finalen Freigabecommit erfolgreich.
-- [ ] GHCR-Image v0.2.65-beta.22 erfolgreich gebaut und veröffentlicht.
-- [ ] Öffentlicher anonymer Pull, `:beta`-Gleichheit und Versionslabel geprüft.
-- [ ] ZimaOS App Store aktualisiert und erzeugte `gh-pages`-Compose-Datei überprüft.
+- [x] GitHub Source Checks für den Beta-22-Freigabecommit erfolgreich.
+- [x] GHCR-Image v0.2.65-beta.22 erfolgreich gebaut und veröffentlicht.
+- [x] Öffentlicher anonymer Pull, `:beta`-Gleichheit und Versionslabel geprüft.
+- [x] ZimaOS App Store aktualisiert und erzeugte `gh-pages`-Compose-Datei überprüft.
 
 ## Ausstehende Praxistests
 - [ ] Mehrere echte Docker-Images, GitHub-Projekte, YAML-Dateien und Katalog-Apps auf einem Test-NAS installieren.
