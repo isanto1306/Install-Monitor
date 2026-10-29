@@ -1,6 +1,6 @@
 # Audit der vier Importwege – Install Monitor
 
-Stand: 2026-10-29. Quellcode: Branch fix/verified-web-port-autocomplete. Die veröffentlichte Beta 21 bleibt unverändert.
+Stand: 2026-10-29. Quellcode: Beta-22-Freigabeversion 0.2.65-beta.22; Praxistests mit realen Drittanbieter-Apps bleiben offen.
 
 ## Importwege und Datenquellen
 
