@@ -73,6 +73,18 @@ class VerifiedPortCompletionTests(unittest.TestCase):
             self.assertFalse(im._im_autocomplete_verified_web_port(doc, 'webapp'))
             self.assertEqual(im.yaml.safe_dump(doc), original)
 
+    def test_reverse_proxy_only_service_is_never_exposed(self):
+        for changes in (
+            {'labels': {'traefik.enable': 'true',
+                        'traefik.http.routers.web.rule': 'Host(web.example.test)'}},
+            {'labels': ['caddy=web.example.test']},
+            {'deploy': {'labels': ['traefik.http.services.web.loadbalancer.server.port=3000']}},
+        ):
+            doc = example(**changes)
+            with self.subTest(changes=changes):
+                self.assertFalse(im._im_autocomplete_verified_web_port(doc, 'webapp'))
+                self.assertNotIn('ports', doc['services']['webapp'])
+
     def test_no_auto_exposure_of_infrastructure_and_ambiguous_stacks(self):
         doc = example(image='postgres:17')
         self.assertFalse(im._im_autocomplete_verified_web_port(doc, 'webapp'))
