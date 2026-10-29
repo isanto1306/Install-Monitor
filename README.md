@@ -1,6 +1,6 @@
 # Install Monitor
 
-**v0.2.64 Beta 21 – Public beta · GPL v3**
+**v0.2.65 Beta 22 – Public beta · GPL v3**
 
 Install Monitor is a self-hosted, dark-mode application for inspecting and configuring Docker images, repositories, and Compose projects for **ZimaOS** and compatible Linux hosts. It guides users through source inspection, storage paths, ports, permissions, resource settings, and a reviewed installation process.
 
@@ -48,6 +48,12 @@ sh install.sh --docker
 Open `http://<YOUR-NAS-IP>:9012` **within your trusted LAN** to log in with the username and password you just configured. For remote access, use HTTPS/VPN.
 
 This Docker deployment does **not** automatically create a native ZimaOS dashboard tile. The native ZimaOS app registration path is not implemented in this beta. A genuine first-run installation on a clean ZimaOS system and Docker image build must be validated before a production recommendation.
+
+## Verified WebUI ports and import-path regression tests (Beta 22)
+
+At source analysis, Install Monitor may fill in a missing published WebUI port **only when a unique container-loopback HTTP healthcheck establishes the TCP target port**. Existing mappings from manually pasted YAML remain unchanged. Image and publisher-URL imports can remap a conflicting host port only to a socket-verified free NAS port.
+
+Database, worker, host-network and reverse-proxy-only services remain unexposed. Unknown WebUI ports are never invented. Docker-image, GitHub/URL, raw YAML and LinuxServer.io import behavior are covered by regression tests and documented in `AUDIT_IMPORT_PATHS.md`.
 
 ## Create missing Headplane config.yaml (Beta 21)
 

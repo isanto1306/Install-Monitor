@@ -1,4 +1,4 @@
-# Install Monitor v0.2.64 Beta 21 · öffentliche Beta (GPL v3)
+# Install Monitor v0.2.65 Beta 22 · öffentliche Beta (GPL v3)
 
 **Neuinstallationen starten auf Englisch.** Eine bereits gewählte Sprache bleibt beim Update erhalten.
 
@@ -55,6 +55,12 @@ python3 setup_credentials.py --output /DATA/AppData/Install-Monitor/.env
 
 - `docker restart install-monitor` lädt **keine** neuen Compose-Umgebungsvariablen. Bei Änderungen an `.env` müssen Container mit `docker compose up -d --force-recreate --no-build` am Projektstandort neu erstellt werden, nachdem die Konfiguration geprüft wurde.
 - Die alte Klartextvariable `IM_ADMIN_PASSWORD` wird für Bestandsinstallationen noch akzeptiert; bei Neuinstallationen den neuen Hash verwenden.
+
+## Verbesserte Port-Automatik und Quellenprüfung (Beta 22)
+
+Bei neuen Quellen kann Install Monitor einen fehlenden Web-Hostport ergänzen, **wenn ein eindeutiger, containerlokaler HTTP-Healthcheck den internen TCP-Webport belegt**. Bereits definierte Portabbildungen werden nicht geändert, wenn die Compose-Datei direkt als YAML eingegeben wurde. Für Hersteller-URLs und Docker-Images werden belegte Hostports nur mit verifiziert freien NAS-Port-Alternativen ersetzt.
+
+Datenbanken, Worker, Host-Netzwerk und ausdrücklich nur für Reverse-Proxy vorgesehene Dienste erhalten keine zusätzliche Host-Portfreigabe. Fehlende Webport-Herstellerangaben werden nicht erfunden. Die vier Importwege (Docker-Image, GitHub/URL, YAML, LinuxServer.io) sind in `AUDIT_IMPORT_PATHS.md` dokumentiert und in Regressionstests verglichen.
 
 ## Headplane-Konfiguration direkt erstellen (Beta 21)
 

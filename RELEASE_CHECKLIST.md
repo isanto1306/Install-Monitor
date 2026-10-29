@@ -1,25 +1,25 @@
-# Freigabecheckliste v0.2.64-beta.21
+# Freigabecheckliste v0.2.65-beta.22
 
-## Änderungen / Sicherheit
-- [x] Optionaler Headplane-Konfigurationsdialog bei fehlender config.yaml in DE/EN/FR/PT/ES.
-- [x] URLs sind Pflichtangaben; keine automatisch erfundene Headscale-Adresse.
-- [x] Backend lässt nur den offiziellen Headplane-Dienst mit eigenem absolutem AppData-Config-Mount zu.
-- [x] Sichere Dateierstellung im Netzwerk-isolierten, nicht privilegierten Docker-Hilfscontainer, ohne bestehende Dateien zu überschreiben.
-- [x] Ausschließlich ein exklusiv angelegtes `config.yaml` unter dem App-Namespace; keine Symlinks.
-- [x] Cookie-Secret kryptografisch zufällig; nur über stdin übertragen, nicht in Logs/Antworten.
-- [x] Datei wird mit Berechtigungen `0600` erstellt.
-- [x] Nach Dateierstellung erfolgt die reguläre Prüfansicht erneut; ohne echte config.yaml bleibt Installation gesperrt.
-- [x] Beta 19 und 20 Funktionen unverändert.
+## Quellcode und Kompatibilität
+- [x] Vier Eingänge in gemeinsamer Regressionstest-Matrix (Docker-Image, GitHub/URL, Compose-YAML, LinuxServer.io-Katalog).
+- [x] iSanto1306-Katalog verwendet GitHub-/Compose-URL-Import; Pfad ist dokumentiert.
+- [x] Eindeutige interne HTTP-Webports dürfen bei fehlenden Portbindungen automatisch ergänzt werden.
+- [x] Vorhandene explizite Portzuordnungen und manuelle YAML-Vorgaben bleiben erhalten.
+- [x] Host-Portkonflikte bei automatischen URL-/Image-Importen werden nur bei verifiziert freien Alternativen umgesetzt.
+- [x] Proxy-only-Services, Worker, Datenbanken und Host-Netzwerk erhalten keine ungewollte Host-Portfreigabe.
+- [x] Gemeinsame AppData-Mounts sowie nicht erfundene Tokens/PUID/PGID in Regressionstests abgedeckt.
+- [x] Änderungen aus Beta 19–21 bleiben im vorhandenen Code erhalten.
 
 ## Veröffentlichung
-- [x] GitHub Source Checks des finalen Freigabestands erfolgreich.
-- [x] Docker-Image v0.2.64-beta.21 erfolgreich publiziert, `:beta` bestätigt.
-- [x] Anonymer GHCR-Pull für Versionstag und `:beta` sowie Versionslabel verifiziert.
-- [x] ZimaOS App Store aktualisiert und generierte gh-pages Compose auf Beta 21 überprüft.
+- [ ] GitHub Source Checks für den finalen Freigabecommit erfolgreich.
+- [ ] GHCR-Image v0.2.65-beta.22 erfolgreich gebaut und veröffentlicht.
+- [ ] Öffentlicher anonymer Pull, `:beta`-Gleichheit und Versionslabel geprüft.
+- [ ] ZimaOS App Store aktualisiert und erzeugte `gh-pages`-Compose-Datei überprüft.
 
-## Praxistests (offen)
-- [ ] Headplane-Erstinstallation mit tatsächlich laufendem Headscale auf ZimaOS getestet.
-- [ ] Cookie-/Config-Dateiberechtigungen und Schreibzugriff auf dem konkreten NAS verifiziert.
-- [ ] Erweiterte Headplane-Integrationen nur mit ausdrücklicher Konfiguration aktivieren.
+## Ausstehende Praxistests
+- [ ] Mehrere echte Docker-Images, GitHub-Projekte, YAML-Dateien und Katalog-Apps auf einem Test-NAS installieren.
+- [ ] Reale Proxy-/Firewall-Regeln mit den neuen Webport-Vorschlägen testen.
+- [ ] Monline-`user: 1000:1000`: Ursprung und korrekten Start ohne Sicherheitsabsenkung prüfen.
+- [ ] Unbekannte Hersteller-Initialdaten, Docker-Rechte und Konfigurationsdateien im Einzelfall kontrollieren.
 
-**Keine automatisierte Umgehung von Sicherheits- oder Dateiprüfungen.**
+Keine Installationseinschränkung wird zur Umgehung eines fehlenden Herstellerwerts ausgeschaltet.
