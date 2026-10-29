@@ -150,6 +150,29 @@ class FourSourceAuditTests(unittest.TestCase):
             self.assertEqual(mains[1], "/DATA/AppData/webtest/config:/config")
             self.assertEqual(workers[1], "/DATA/AppData/webtest/config:/config:ro")
 
+    def test_user_permissions_and_restart_policies_are_not_invented(self):
+        monline = """
+name: webtest
+services:
+  webtest:
+    image: lscr.io/linuxserver/webtest:latest
+    restart: unless-stopped
+    ports: ["3444:3000"]
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+"""
+        for kind in ("image", "url", "yaml"):
+            with self.subTest(kind=kind):
+                result = self.analyze(kind, monline)
+                svc = im.safe_yaml(result["source"])["services"]["webtest"]
+                self.assertEqual(svc["environment"]["PUID"], "1000")
+                self.assertEqual(svc["environment"]["PGID"], "1000")
+                self.assertEqual(svc["restart"], "unless-stopped")
+                self.assertNotIn("user", svc)
+                self.assertNotIn("privileged", svc)
+                self.assertNotIn("cap_add", svc)
+
     def test_source_specific_scoping_is_intentional(self):
         for kind in ("image", "url", "yaml", "lsio"):
             result = self.analyze(kind)
