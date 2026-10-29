@@ -4893,6 +4893,22 @@ def _im_autocomplete_verified_web_port(document: dict, app_name: str) -> list[st
                       'smtp', 'headscale', 'tailscale', 'cloudflared')
     if any(tag in name for tag in infrastructure):
         return []
+    # A service configured for routing through a reverse proxy may deliberately
+    # have no published port. Do not bypass that choice by exposing the Web UI.
+    deployment = service.get('deploy')
+    sources = [service.get('labels'),
+               deployment.get('labels') if isinstance(deployment, dict) else None]
+    for labels in sources:
+        if isinstance(labels, dict):
+            keys = [str(k).lower() for k in labels]
+        elif isinstance(labels, list):
+            keys = [str(x).split('=', 1)[0].lower() for x in labels]
+        else:
+            keys = []
+        if any(key.startswith(('traefik.http.', 'caddy.', 'nginx-proxy.'))
+               or key in ('traefik.enable', 'caddy', 'vhost', 'virtual_host')
+               for key in keys):
+            return []
     health = service.get('healthcheck') or {}
     test = health.get('test') if isinstance(health, dict) else None
     if isinstance(test, list):
