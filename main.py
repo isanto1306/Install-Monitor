@@ -4857,6 +4857,92 @@ def _dockerhub_publisher_documentation(image: str) -> tuple[str, str, str, list[
     return None
 
 
+def _im_autocomplete_verified_web_port(document: dict, app_name: str) -> list[str]:
+    """Supply a missing published Web port only from explicit HTTP evidence.
+
+    This does not guess that EXPOSE 3306/6379 or a lone PORT environment
+    variable is a Web UI. It only operates at source import time, before the
+    operator edits the Compose; build_plan and install never rewrite a
+    deliberately changed service.
+    """
+    services = document.get('services') or {}
+    if not isinstance(services, dict) or not services:
+        return []
+    casa = document.get('x-casaos')
+    casa = casa if isinstance(casa, dict) else {}
+    main = casa.get('main')
+    if not isinstance(main, str) or main not in services:
+        app_key = app_name.lower().replace('_', '-')
+        matches = [key for key in services if key.lower().replace('_', '-') == app_key]
+        if len(matches) == 1:
+            main = matches[0]
+        elif len(services) == 1:
+            main = next(iter(services))
+        else:
+            return []
+    service = services[main]
+    if not isinstance(service, dict) or service.get('network_mode') == 'host' or service.get('profiles'):
+        return []
+    # Existing port mappings, including intentionally dynamic/target-only
+    # mappings, belong to the publisher or user and must remain untouched.
+    if service.get('ports') is not None:
+        return []
+    name = (main + '/' + str(service.get('image') or '')).lower()
+    infrastructure = ('postgres', 'mariadb', 'mysql', 'redis', 'valkey',
+                      'mongo', 'rabbitmq', 'memcached', 'database', 'worker',
+                      'smtp', 'headscale', 'tailscale', 'cloudflared')
+    if any(tag in name for tag in infrastructure):
+        return []
+    health = service.get('healthcheck') or {}
+    test = health.get('test') if isinstance(health, dict) else None
+    if isinstance(test, list):
+        health_text = ' '.join(str(part) for part in test)
+    elif isinstance(test, str):
+        health_text = test
+    else:
+        health_text = ''
+    # A healthcheck's explicit loopback HTTP endpoint is evidence of a local
+    # web listener. Arbitrary remote health URLs cannot prove a container port.
+    declared_http_ports = {
+        int(port) for port in re.findall(
+            r'https?://(?:127\.0\.0\.1|localhost|\[::1\]):(\d{1,5})(?:[/?#\s]|$)',
+            health_text, flags=re.I)
+        if 1 <= int(port) <= 65535
+    }
+    if len(declared_http_ports) != 1:
+        return []
+    target = next(iter(declared_http_ports))
+    # If EXPOSE is present, it must not disagree with the HTTP endpoint.
+    exposed = service.get('expose')
+    if exposed is not None:
+        if not isinstance(exposed, list):
+            return []
+        candidates = set()
+        for item in exposed:
+            value = str(item)
+            match = re.fullmatch(r'(\d{1,5})(?:/(tcp|udp))?', value)
+            if not match or not 1 <= int(match.group(1)) <= 65535:
+                return []
+            candidates.add((int(match.group(1)), match.group(2) or 'tcp'))
+        if candidates != {(target, 'tcp')}:
+            return []
+    preferred = str(casa.get('port_map') or '').strip()
+    # port_map is publisher WebUI metadata, not a blanket permission to
+    # expose arbitrary internal ports. It may choose the host port only after
+    # explicit HTTP proof. Invalid/special values are ignored.
+    host = int(preferred) if preferred.isdecimal() and 1 <= int(preferred) <= 65535 else target
+    service['ports'] = [f'{host}:{target}']
+    if not isinstance(document.get('x-casaos'), dict):
+        document['x-casaos'] = {}
+    document['x-casaos'].setdefault('main', main)
+    document['x-casaos']['port_map'] = str(host)
+    return [
+        f'{main}: Interner HTTP-Web-Port {target}/tcp durch den Hersteller-Healthcheck '
+        f'belegt; Host-Port {host} für die ZimaOS-Vorschau ergänzt. '
+        'Portbelegung wird vor Installation geprüft. Keine anderen Dienste veröffentlicht.'
+    ]
+
+
 def _auto_reassign_conflicting_ports(document: dict) -> list[str]:
     """Read-only conflict check; replace only *host* ports with tested free ports.
 
@@ -8838,9 +8924,20 @@ def _analyze_source_payload(payload: Source):
     if not project_url and payload.kind in ('yaml', 'image'):
         project_url = _embedded_compose_github(doc)
     icon_search_terms = _compose_icon_terms(doc, name, payload.value if payload.kind == 'image' else '')
-    # Generic port optimization: only confirmed free alternatives and only on
-    # automatically discovered definitions, never user-entered YAML or overrides.
-    if payload.kind == 'image' and not (payload.container_port or payload.host_port or payload.config_path):
+    # Fill a missing WebUI mapping only with proof of the internal HTTP port.
+    # Source analysis is the only place this happens: an explicitly revised
+    # user choice in the following configuration step is never overwritten.
+    if not (payload.kind == 'image' and
+            (payload.container_port or payload.host_port or payload.config_path)):
+        auto_web_notes = _im_autocomplete_verified_web_port(doc, name)
+        if auto_web_notes:
+            content = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
+            source_notes.extend(auto_web_notes)
+    # For publisher URL and image imports (not pasted user-supplied YAML),
+    # replace conflicts only with a socket-verified free HOST port.
+    if payload.kind in ('image', 'url') and not (
+            payload.kind == 'image' and
+            (payload.container_port or payload.host_port or payload.config_path)):
         if any(svc.get('ports') for svc in doc['services'].values()):
             changes = _auto_reassign_conflicting_ports(doc)
             if changes:
